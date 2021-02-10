@@ -86,20 +86,21 @@ module.exports = function (logger) {
 							// dsh todo handle connection errors
 						}
 						remove_api(id);
-						const ret = {
-							body: (resp && resp.body) ? parse_json(resp) : null,
-							iter: id,
-							elapsed_ms: (resp && resp.headers) ? resp.headers._elapsed_ms : 0
-						};
-						req_cb(ret, () => {
-							return cb();
+						stall_loop(() => {													// stall the request cb if we are paused
+							const ret = {
+								body: (resp && resp.body) ? parse_json(resp) : null,
+								iter: id,
+								elapsed_ms: (resp && resp.headers) ? resp.headers._elapsed_ms : 0
+							};
+							req_cb(ret, () => {
+								return cb();
+							});
 						});
 					});
 				})
 			}, () => {
-				const end = Date.now();
-				const elapsed = end - start;
-				logger.log('[spawn] launcher finished:', elapsed);
+				const elapsed = Date.now() - start;
+				logger.log('[spawn] launcher finished:', misc.friendly_ms(elapsed));
 				return fin_cb();
 			});
 		}
@@ -113,10 +114,10 @@ module.exports = function (logger) {
 				limit_hit = true;
 				const current_rate_per_sec = Object.keys(ids).length;
 				const prev_limit = CURRENT_LIMIT_PER_SEC;
-				detected_max_rate_per_sec = current_rate_per_sec;		// this is likely the official rate limit, store it for logs
+				detected_max_rate_per_sec = current_rate_per_sec;			// this is likely the official rate limit, store it for logs
 				CURRENT_LIMIT_PER_SEC = Math.floor(current_rate_per_sec * (options.head_room_percent / 100));
 
-				if (CURRENT_LIMIT_PER_SEC >= prev_limit) {				// if the new "decrease" is greater than the old one... forget it, decrement the old one instead
+				if (CURRENT_LIMIT_PER_SEC >= prev_limit) {					// if the new "decrease" is greater than old one... forget it, decrement old one instead
 					CURRENT_LIMIT_PER_SEC = prev_limit - 1;
 				}
 
@@ -217,7 +218,7 @@ module.exports = function (logger) {
 		function retry_req(opts, cb) {
 			opts._name = opts._name || 'request';										// name for request type, for debugging
 			opts._max_attempts = opts._max_attempts || 3;								// only try so many times
-			opts._retry_codes = opts._retry_codes || {								// list of codes we will retry
+			opts._retry_codes = opts._retry_codes || {									// list of codes we will retry
 				'429': '429 rate limit',
 				'408': '408 timeout',
 				'500': '500 internal error',
@@ -258,14 +259,14 @@ module.exports = function (logger) {
 				if (misc.is_error_code(code)) {
 					const code_desc = opts._retry_codes[code.toString()];
 					if (code_desc) {															// retry on these error codes
-						if (code !== 429 && opts._attempt >= opts._max_attempts) {		// don't give up on 429s, retry it again
+						if (code !== 429 && opts._attempt >= opts._max_attempts) {				// don't give up on 429s, retry it again
 							logger.error('[' + opts._name + ' ' + opts._tx_id + '] ' + code_desc + ', giving up. attempts:', opts._attempt);
 							return cb(req_e, resp);
 						} else {
 							const delay_ms = calc_delay(opts, resp);
 							logger.error('[' + opts._name + ' ' + opts._tx_id + '] ' + code_desc + ', trying again in a bit:', misc.friendly_ms(delay_ms));
 							return setTimeout(() => {
-								return retry_req(opts, cb);									// try the request again after a delay
+								return retry_req(opts, cb);										// try the request again after a delay
 							}, delay_ms);
 						}
 					}
@@ -282,12 +283,24 @@ module.exports = function (logger) {
 				} else {																		// on other codes stager delay w/large randomness
 					opt._delay_ms = ((500 * opt._attempt) + Math.random() * 1500);
 				}
-				if (opt._delay_ms >= 60 * 1000) {										 	// don't delay for over 1 minute
+				if (opt._delay_ms >= 60 * 1000) {										 		// don't delay for over 1 minute
 					opt._delay_ms = 60 * 1000;
 				}
 				return opt._delay_ms.toFixed(0);
 			}
 		};
+
+		// don't respond if we are paused
+		function stall_loop(stall_cb) {
+			if (options._pause === false) {
+				return stall_cb();
+			} else {
+				console.log('[rec] paused.');
+				setTimeout(() => {
+					return stall_loop(stall_cb);												// postpone again - recurse
+				}, 500);
+			}
+		}
 	}
 
 	// --------------------------------------------

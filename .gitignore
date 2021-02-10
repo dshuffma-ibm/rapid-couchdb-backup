@@ -45,3 +45,4 @@ scripts/reports
 # AppScan
 *.irx
 *.zip
+_backup_docs.json
