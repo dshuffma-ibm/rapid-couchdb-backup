@@ -39,12 +39,11 @@ setTimeout(() => {
 	ending = true;
 	console.log('ending early');
 	prepare_for_death();
-}, 1000 * 60 * 1);
+}, 1000 * 60 * 5);
 // ------------------------------------------------
 
 const start = Date.now();
 console.log('backup preflight starting @', start);
-target_stream.write('\n');									// add newline b/c thats what cloudant_backup does
 
 get_db_data((errors, data) => {								// get the sequence number and count the docs
 	console.log('backup preflight complete.', data);
@@ -76,13 +75,14 @@ get_db_data((errors, data) => {								// get the sequence number and count the 
 		if (body && body.rows) {
 			const elapsed_ms = response ? response.elapsed_ms : 0;
 			const api_id = response ? response.iter : 0;
-			finished_docs += body.rows.length;				// keep track of the number of docs we have finished
+			const docs = parse_for_docs(body);
+			finished_docs += docs.length;						// keep track of the number of docs we have finished
 			const percent = (finished_docs / data.doc_count * 100).toFixed(1) + '%';
-			console.log('[rec] received resp for api:', api_id + ', # docs:', body.rows.length +
+			console.log('[rec] received resp for api:', api_id + ', # docs:', docs.length +
 				', took:', misc.friendly_ms(elapsed_ms) + ', total:', finished_docs, '[' + percent + ']');
 
 			if (ending === false) {
-				const write_okay = target_stream.write(JSON.stringify(body.rows) + '\n', 'utf8', write_flushed);
+				const write_okay = target_stream.write(JSON.stringify(docs) + '\n', 'utf8', write_flushed);
 				if (!write_okay) {								// the buffer is full, ALL STOP (wait for drain event)
 					if (async_options._pause === false) {
 						async_options._pause = true;
@@ -95,7 +95,7 @@ get_db_data((errors, data) => {								// get the sequence number and count the 
 			}
 
 			function write_flushed() {
-				console.log('[write] wrote docs from batch api:', api_id + ', # docs:', body.rows.length + ', total:', finished_docs);
+				console.log('[write] wrote docs from batch api:', api_id + ', # docs:', docs.length + ', total:', finished_docs);
 			}
 		}
 		return req_cb();
@@ -145,9 +145,25 @@ function get_db_data(cb) {
 // ------------------------------------------------------
 // end the backup
 // ------------------------------------------------------
-function prepare_for_death(){
+function prepare_for_death() {
 	console.log('[write] ending write stream');
+	target_stream.write('\n');
 	target_stream.end('', 'utf8', function () {
 		process.exit();
 	});
+}
+
+// ------------------------------------------------------
+// Pull each doc field out of the response
+// ------------------------------------------------------
+function parse_for_docs(body) {
+	let ret = [];
+	if (body && body.rows) {
+		for (let i in body.rows) {
+			if (body.rows[i].doc) {
+				ret.push(body.rows[i].doc);
+			}
+		}
+	}
+	return ret;
 }
