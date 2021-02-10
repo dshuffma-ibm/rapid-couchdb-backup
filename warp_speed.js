@@ -1,14 +1,17 @@
 //------------------------------------------------------------
 // warp_speed.js
 //------------------------------------------------------------
+const fs = require('fs');
 const misc = require('./libs/misc.js')();
 const async_rl = require('./libs/async_rate.js')(console);
 const secrets = require('./env/secrets.json');
 const couch = require('./libs/couchdb.js')(secrets.db_connection);
 const DB_NAME = secrets.db_name;
 let finished_docs = 0;
+let target_stream = fs.createWriteStream('./_backup_docs.json');
+let ending = false;				// dsh todo test code remove me
 
-// ---------------------------------- Edit Settings  ---------------------------------- //
+// ---------------------------------- Editable Settings  ---------------------------------- //
 const BATCH_GET_BYTES_GOAL = 1 * 1024 * 1024;			// MiB
 let MAX_RATE_PER_SEC = 10;								// the maximum number of api requests to send per second
 let MAX_PARALLEL = 30;									// this can be really high, ideally the rate limiter is controlling the load, not this field
@@ -31,15 +34,18 @@ const HEAD_ROOM_PERCENT = 80;	 						// how much of the real rate limit should b
 //   1, 10, 30 = 15.4 hours in 5 minutes [api resp grew to 46 seconds]
 // 1.5, 10, 30 = 12.5 hours in 5 minutes [api resp grew to 58 seconds]
 
-// end test early
+// end test early - dsh todo remove me
 setTimeout(() => {
+	ending = true;
 	console.log('ending early');
-	process.exit();
-}, 1000 * 60 * 5);
+	prepare_for_death();
+}, 1000 * 60 * 1);
 // ------------------------------------------------
 
 const start = Date.now();
 console.log('backup preflight starting @', start);
+target_stream.write('\n');									// add newline b/c thats what cloudant_backup does
+
 get_db_data((errors, data) => {								// get the sequence number and count the docs
 	console.log('backup preflight complete.', data);
 
@@ -49,6 +55,7 @@ get_db_data((errors, data) => {								// get the sequence number and count the 
 		max_rate_per_sec: MAX_RATE_PER_SEC,
 		max_parallel: MAX_PARALLEL,
 		head_room_percent: HEAD_ROOM_PERCENT,
+		_pause: false,
 		request_opts_builder: (iter) => {					// build the options for each batch clouant api
 			const skip = iter * data.batch_size;
 			const req_options = {
@@ -71,8 +78,25 @@ get_db_data((errors, data) => {								// get the sequence number and count the 
 			const api_id = response ? response.iter : 0;
 			finished_docs += body.rows.length;				// keep track of the number of docs we have finished
 			const percent = (finished_docs / data.doc_count * 100).toFixed(1) + '%';
-			console.log('[rec] received api:', api_id + ', # docs:', body.rows.length +
+			console.log('[rec] received resp for api:', api_id + ', # docs:', body.rows.length +
 				', took:', misc.friendly_ms(elapsed_ms) + ', total:', finished_docs, '[' + percent + ']');
+
+			if (ending === false) {
+				const write_okay = target_stream.write(JSON.stringify(body.rows) + '\n', 'utf8', write_flushed);
+				if (!write_okay) {								// the buffer is full, ALL STOP (wait for drain event)
+					if (async_options._pause === false) {
+						async_options._pause = true;
+						target_stream.once('drain', function () {
+							async_options._pause = false;		// put it back
+						});
+						console.log('[write] stalling couch reads b/c write stream is backed up');
+					}
+				}
+			}
+
+			function write_flushed() {
+				console.log('[write] wrote docs from batch api:', api_id + ', # docs:', body.rows.length + ', total:', finished_docs);
+			}
 		}
 		return req_cb();
 	}, (errs) => {												// all done!
@@ -115,5 +139,15 @@ function get_db_data(cb) {
 				}
 			});
 		}
+	});
+}
+
+// ------------------------------------------------------
+// end the backup
+// ------------------------------------------------------
+function prepare_for_death(){
+	console.log('[write] ending write stream');
+	target_stream.end('', 'utf8', function () {
+		process.exit();
 	});
 }
