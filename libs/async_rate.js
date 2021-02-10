@@ -12,10 +12,10 @@ module.exports = function (logger) {
 	{
 		count: 100,							// number of http requests we will be sending
 		max_rate_per_sec: 50,				// the maximum number of api requests to send per second (upper bound)
-		max_parallel: 1000,					// this can be really high, ideally the rate limiter is controlling the load, not this field
-		head_room_percent: 80,				// how much of the real rate limit should be used for this task (80 -> 80% of the detected rate limit)
+		max_parallel: 10,					// [optional] how many pending apis can there ever be
+		head_room_percent: 80,				// [optional] how much of the real rate limit should be used for this task (80 -> 80% of the detected rate limit)
+		min_rate_per_sec: 2,				// [optional]
 		request_opts_builder: (iter)=> {}	// function to build the http request options
-		min_rate_per_sec: 2,
 	}
 	*/
 	// dsh todo protect input options
@@ -26,17 +26,24 @@ module.exports = function (logger) {
 		let pending_ids = {};
 		let allow_decrease = true;
 		let limit_hit = false;
-		let CURRENT_LIMIT_PER_SEC = 0;
+		let CURRENT_LIMIT_PER_SEC = 2;									// start off at 2, increase from here;
 		let detected_max_rate_per_sec = 0;
 		const stalled_ids = {};
 
-		const requests = [];										// build a dummy array, 1 per request we expect to do
+		options.min_rate_per_sec = options.min_rate_per_sec || 2;		// default
+		options.max_parallel = options.max_parallel || 10;				// default
+		options.head_room_percent = options.head_room_percent || 80;	// default
+
+		const input_errors = check_inputs(options);
+		if (input_errors.length > 0) {
+			return finish_cb({ input_errors });
+		}
+
+		const requests = [];											// build a dummy array, 1 per request we expect to do
 		for (let i = 1; i <= options.count; i++) {
 			requests.push(i);
 		}
 		logger.log('starting', requests.length, 'batch doc reqs. max parallel:', options.max_parallel);
-		options.min_rate_per_sec = options.min_rate_per_sec || 2;
-		CURRENT_LIMIT_PER_SEC = 2;									// start off at 2, increase from here
 		launcher(requests, options, request_cb, () => {
 			return finish_cb();
 		});
@@ -279,6 +286,35 @@ module.exports = function (logger) {
 			logger.error('unable to parse response to json:', e);
 		}
 		return json;
+	}
+
+	// check the input options
+	function check_inputs(opts) {
+		const errors = [];
+		if (isNaN(opts.count)) {
+			errors.push('"count" must be a number');
+		}
+		if (isNaN(opts.max_rate_per_sec)) {
+			errors.push('"max_rate_per_sec" must be a number');
+		}
+		if (isNaN(opts.max_parallel)) {
+			errors.push('"max_parallel" must be a number');
+		}
+		if (isNaN(opts.head_room_percent)) {
+			errors.push('"head_room_percent" must be a number');
+		}
+		if (isNaN(opts.min_rate_per_sec)) {
+			errors.push('"min_rate_per_sec" must be a number');
+		}
+		if (typeof opts.request_opts_builder !== 'function') {
+			errors.push('"request_opts_builder" must be a function');
+		}
+		const test_opts = opts.request_opts_builder(777);
+		if (typeof test_opts !== 'object') {
+			errors.push('"request_opts_builder" must return an object');
+		}
+
+		return errors;
 	}
 
 	return exports;

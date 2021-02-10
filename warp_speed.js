@@ -75,10 +75,16 @@ get_db_data((errors, data) => {								// get the sequence number and count the 
 				', took:', misc.friendly_ms(elapsed_ms) + ', total:', finished_docs, '[' + percent + ']');
 		}
 		return req_cb();
-	}, () => {												// all done!
-		const end = Date.now();
-		const elapsed = end - start;
-		console.log('[fin] doc backup complete @', end, misc.friendly_ms(elapsed));
+	}, (errs) => {												// all done!
+		if (errs) {
+			console.error('[fin] doc backup stopped. errors:');
+			console.error(JSON.stringify(errs, null, 2));
+		} else {
+			const end = Date.now();
+			const elapsed = end - start;
+			console.log('[fin] doc backup complete @', end, misc.friendly_ms(elapsed));
+		}
+		process.exit(1);		// dsh todo remove this...
 	});
 });
 
