@@ -2,7 +2,7 @@
 // warp_speed.js
 //------------------------------------------------------------
 const misc = require('./libs/misc.js')();
-const async_rl = require('./libs/async_rate.js')();
+const async_rl = require('./libs/async_rate.js')(console);
 const secrets = require('./env/secrets.json');
 const couch = require('./libs/couchdb.js')(secrets.db_connection);
 const DB_NAME = secrets.db_name;
