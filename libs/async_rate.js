@@ -97,7 +97,7 @@ module.exports = function (logger) {
 							});
 						});
 					});
-				})
+				});
 			}, () => {
 				const elapsed = Date.now() - start;
 				logger.log('[spawn] launcher finished:', misc.friendly_ms(elapsed));
@@ -288,7 +288,7 @@ module.exports = function (logger) {
 				}
 				return opt._delay_ms.toFixed(0);
 			}
-		};
+		}
 
 		// don't respond if we are paused
 		function stall_loop(stall_cb) {
@@ -301,7 +301,7 @@ module.exports = function (logger) {
 				}, 500);
 			}
 		}
-	}
+	};
 
 	// --------------------------------------------
 	// parse api response to json
