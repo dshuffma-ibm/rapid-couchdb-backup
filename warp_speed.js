@@ -33,21 +33,9 @@ module.exports = function (logger) {
 		const start = Date.now();
 		const couch = require('./libs/couchdb.js')(options.db_connection);
 		let finished_docs = 0;
-		let ending = false;											// dsh todo test code remove me
 		let async_options = {};
 		let doc_count = 0;
 		logger.log('backup preflight starting @', start);
-
-
-
-		// end test early - dsh todo remove me
-		setTimeout(() => {
-			ending = true;
-			logger.log('ending early');
-			prepare_for_death();
-		}, 1000 * 60 * 5);
-
-
 
 		// check input arguments
 		options.min_rate_per_sec = options.min_rate_per_sec || 2;		// default
@@ -66,7 +54,7 @@ module.exports = function (logger) {
 				return cb({ internal_errors });
 			}
 
-			logger.log('backup preflight complete.', data);
+			logger.log('backup preflight complete.');
 			doc_count = data.doc_count;									// hoist scope
 
 			logger.log('\nstarting doc backup @', Date.now());
@@ -92,7 +80,7 @@ module.exports = function (logger) {
 				return req_cb();
 			}, (errs) => {												// all done!
 				if (errs) {
-					logger.error('[fin] doc backup stopped. errors:');
+					logger.error('[fin] backup may not be complete. errors:');
 					logger.error(JSON.stringify(errs, null, 2));
 				} else {
 					// dsh todo process changes since start
@@ -111,21 +99,19 @@ module.exports = function (logger) {
 			const docs = misc.parse_for_docs(body);
 
 			if (docs && docs.length > 0) {
-				finished_docs += docs.length;						// keep track of the number of docs we have finished
+				finished_docs += docs.length;					// keep track of the number of docs we have finished
 				const percent = (finished_docs / doc_count * 100).toFixed(1) + '%';
 				logger.log('[rec] received resp for api:', api_id + ', # docs:', docs.length +
 					', took:', misc.friendly_ms(elapsed_ms) + ', total:', finished_docs, '[' + percent + ']');
 
-				if (ending === false) {
-					const write_okay = options.write_stream.write(JSON.stringify(docs) + '\n', 'utf8', write_flushed);
-					if (!write_okay) {								// the buffer is full, ALL STOP (wait for drain event)
-						if (async_options._pause === false) {
-							async_options._pause = true;
-							options.write_stream.once('drain', function () {
-								async_options._pause = false;		// put it back
-							});
-							logger.log('[write] stalling couch reads b/c write stream is backed up');
-						}
+				const write_okay = options.write_stream.write(JSON.stringify(docs) + '\n', 'utf8', write_flushed);
+				if (!write_okay) {								// the buffer is full, ALL STOP (wait for drain event)
+					if (async_options._pause === false) {
+						async_options._pause = true;
+						options.write_stream.once('drain', function () {
+							async_options._pause = false;		// put it back
+						});
+						//logger.log('[write] stalling couch reads b/c write stream is backed up');
 					}
 				}
 			}

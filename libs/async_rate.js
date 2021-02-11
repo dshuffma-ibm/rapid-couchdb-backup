@@ -30,6 +30,7 @@ module.exports = function (logger) {
 		let detected_max_rate_per_sec = 0;
 		const stalled_ids = {};
 		let log_interval = null;
+		let http_errors = [];
 
 		const requests = [];											// build a dummy array, 1 per request we expect to do
 		for (let i = 1; i <= options.count; i++) {
@@ -38,7 +39,13 @@ module.exports = function (logger) {
 		logger.log('starting', requests.length, 'batch doc reqs. max parallel:', options.max_parallel);
 		launcher(requests, options, request_cb, () => {
 			clearInterval(log_interval);
-			return finish_cb();
+			if (http_errors.length > 0) {
+				logger.error('[fin] there were http errors. :(\n', http_errors);
+				return finish_cb(http_errors);
+			} else {
+				logger.log('[fin] there were 0 http errors. :)');
+				return finish_cb(null);
+			}
 		});
 
 		// --------------------------------------------
@@ -70,7 +77,8 @@ module.exports = function (logger) {
 
 					retry_req(JSON.parse(JSON.stringify(req_options)), (err, resp) => {
 						if (err) {
-							// dsh todo handle connection errors
+							logger.error('[spawn]connection error:\n', err);
+							http_errors.push(err);
 						}
 						remove_api(id);
 						stall_loop(() => {													// stall the request cb if we are paused

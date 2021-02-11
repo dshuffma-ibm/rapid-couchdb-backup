@@ -49,7 +49,8 @@ const secrets = require('../env/secrets.json');
 
 // !
 // [test runs] - 299MB - 629k docs (0 deleted docs - 0%) 2037 batch size
-//   1, 10, 30 -> took: 5.0 minutes [350MB]
+//   1, 10, 30 -> took:  8.7 minutes [360MB]
+//   1, 10, 30 -> took:  9.0 minutes [360MB]
 
 // small
 // [test runs] - 4.2MB - 2k docs (0 deleted docs - 0%) 269 batch size
