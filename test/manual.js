@@ -1,13 +1,14 @@
 
 const fs = require('fs');
-const secrets = require('../env/secrets.json');
-const rapid_backup = require('../warp_speed.js')(console);
+const rapid_couchdb = require('../warp_speed.js')(console);
 
 // ---------------------------------- Editable Settings  ---------------------------------- //
 const BATCH_GET_BYTES_GOAL = 1 * 1024 * 1024;			// MiB
-let MAX_RATE_PER_SEC = 10;								// the maximum number of api requests to send per second
-let MAX_PARALLEL = 30;									// this can be really high, ideally the rate limiter is controlling the load, not this field
+const MAX_RATE_PER_SEC = 10;							// the maximum number of api requests to send per second
+const MAX_PARALLEL = 30;								// this can be really high, ideally the rate limiter is controlling the load, not this field
 const HEAD_ROOM_PERCENT = 20;	 						// how much of the real rate limit should be left unused. (20% -> will use 80% of the rate limit)
+const secrets = require('../env/secrets.json');
+// ------------------------------------------------
 
 // ------------------------------------------------
 // [test runs]
@@ -36,6 +37,6 @@ const opts = {
 	batch_get_bytes_goal: BATCH_GET_BYTES_GOAL,
 	write_stream: fs.createWriteStream('./_backup_docs.json'),
 };
-rapid_backup.backup(opts, () => {
+rapid_couchdb.backup(opts, () => {
 	console.log('fin.');
 });

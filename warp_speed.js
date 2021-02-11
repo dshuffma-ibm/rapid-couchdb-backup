@@ -37,6 +37,8 @@ module.exports = function (logger) {
 		let doc_count = 0;
 		logger.log('backup preflight starting @', start);
 
+
+
 		// end test early - dsh todo remove me
 		setTimeout(() => {
 			ending = true;
@@ -45,11 +47,11 @@ module.exports = function (logger) {
 		}, 1000 * 60 * 5);
 
 
+
+		// check input arguments
 		options.min_rate_per_sec = options.min_rate_per_sec || 2;		// default
 		options.max_parallel = options.max_parallel || 10;				// default
 		options.head_room_percent = options.head_room_percent || 20;	// default
-
-
 		const input_errors = misc.check_inputs(options);				// check if there are any arg mistakes
 		if (input_errors.length > 0) {
 			logger.error('input errors:\n', input_errors);
@@ -63,24 +65,20 @@ module.exports = function (logger) {
 
 			logger.log('\nstarting doc backup @', Date.now());
 			async_options = {
-				count: Math.ceil(data.doc_count / data.batch_size),		// calc the number of batch apis we will send
+				count: (data.batch_size === 0) ? 0 : Math.ceil(data.doc_count / data.batch_size),		// calc the number of batch apis we will send
 				max_rate_per_sec: options.max_rate_per_sec,
 				max_parallel: options.max_parallel,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
 				request_opts_builder: (iter) => {						// build the options for each batch clouant api
 					const skip = iter * data.batch_size;
-					const req_options = {
+					return {
 						method: 'GET',
 						baseUrl: options.db_connection,
 						url: '/' + options.db_name + '/_all_docs?include_docs=true&limit=' + data.batch_size + '&skip=' + skip,
-						headers: {
-							'Accept': 'application/json',
-						},
 						timeout: 2 * 60 * 1000,
 						_name: 'batch get',								// name to use in logs
 					};
-					return req_options;
 				}
 			};
 			async_rl.async_reqs_limit(async_options, (resp, req_cb) => {
@@ -91,13 +89,13 @@ module.exports = function (logger) {
 					logger.error('[fin] doc backup stopped. errors:');
 					logger.error(JSON.stringify(errs, null, 2));
 				} else {
+					// dsh todo process changes since start
 					const end = Date.now();
 					const elapsed = end - start;
 					logger.log('[fin] doc backup complete @', end, misc.friendly_ms(elapsed));
 				}
 				prepare_for_death();
 			});
-
 		});
 
 		// handle the docs in the couchdb responses - write the docs to the stream
@@ -141,8 +139,8 @@ module.exports = function (logger) {
 					logger.error('[stats] unable to get basic db data. e:', err);
 					return data_cb(err, null);
 				} else {
-					const avg_doc_bytes = resp.sizes.file / resp.doc_count;
-					const batch_size = Math.floor(options.batch_get_bytes_goal / avg_doc_bytes);
+					const avg_doc_bytes = (resp.doc_count === 0) ? 0 : resp.sizes.file / resp.doc_count;
+					const batch_size = (avg_doc_bytes === 0) ? 0 : Math.floor(options.batch_get_bytes_goal / avg_doc_bytes);
 					const doc_count = resp.doc_count;
 					logger.log('[stats] size:', misc.friendly_bytes(resp.sizes.file));
 					logger.log('[stats] docs:', misc.friendly_number(doc_count));

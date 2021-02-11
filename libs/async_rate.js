@@ -26,7 +26,7 @@ module.exports = function (logger) {
 		let pending_ids = {};
 		let allow_decrease = true;
 		let limit_hit = false;
-		let CURRENT_LIMIT_PER_SEC = 2;									// start off at 2, increase from here;
+		let CURRENT_LIMIT_PER_SEC = 2;									// start off at 2, increase from here
 		let detected_max_rate_per_sec = 0;
 		const stalled_ids = {};
 		let log_interval = null;
@@ -47,7 +47,8 @@ module.exports = function (logger) {
 		log_interval = setInterval(() => {
 			clean_up_records();
 			const elapsed_ms = Date.now() - start;
-			logger.log('- running for: ' + misc.friendly_ms(elapsed_ms) + ', stalled apis:', Object.keys(stalled_ids).length + ', pending apis:', Object.keys(pending_ids).length + ', current rate:', Object.keys(ids).length + '/sec, max:', detected_max_rate_per_sec + '/sec');
+			logger.log('- running for: ' + misc.friendly_ms(elapsed_ms) + ', stalled apis:', Object.keys(stalled_ids).length + ', pending apis:',
+				Object.keys(pending_ids).length + ', current rate:', Object.keys(ids).length + '/sec, max:', detected_max_rate_per_sec + '/sec');
 		}, 1 * 1000);
 
 		// --------------------------------------------
@@ -64,12 +65,14 @@ module.exports = function (logger) {
 					req_options._tx_id = id;
 
 					const elapsed_ms = Date.now() - start;
-					const percent = on / options.count * 100;
-					const estimated_total_ms = 1 / (percent / 100) * elapsed_ms;
+					const percent = (options.count === 0) ? 0 : (on / options.count * 100);
+					const estimated_total_ms = (percent === 0) ? 0 : (1 / (percent / 100) * elapsed_ms);
 					const time_left = estimated_total_ms - elapsed_ms;
 
-					logger.log('[spawn] sending api', on + ', @ rate:', apis_per_sec + '/sec limit:', CURRENT_LIMIT_PER_SEC + '/sec, detected max:', detected_max_rate_per_sec + '/sec, reqs sent:', percent.toFixed(1) + '%');
-					logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left), confidence(percent));
+					logger.log('[spawn] sending api', on + ', @ rate:', apis_per_sec + '/sec limit:', CURRENT_LIMIT_PER_SEC +
+						'/sec, detected max:', detected_max_rate_per_sec + '/sec, reqs sent:', percent.toFixed(1) + '%');
+					logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:',
+						misc.friendly_ms(time_left), confidence(percent));
 
 					retry_req(JSON.parse(JSON.stringify(req_options)), (err, resp) => {
 						if (err) {
@@ -107,7 +110,7 @@ module.exports = function (logger) {
 				detected_max_rate_per_sec = current_rate_per_sec;			// this is likely the official rate limit, store it for logs
 				CURRENT_LIMIT_PER_SEC = Math.floor(current_rate_per_sec * ((100 - options.head_room_percent) / 100));
 
-				if (CURRENT_LIMIT_PER_SEC >= prev_limit) {					// if the new "decrease" is greater than old one... forget it, decrement old one instead
+				if (CURRENT_LIMIT_PER_SEC >= prev_limit) {				// if the new "decrease" is greater than old one... forget it, decrement old one instead
 					CURRENT_LIMIT_PER_SEC = prev_limit - 1;
 				}
 
@@ -115,7 +118,8 @@ module.exports = function (logger) {
 					CURRENT_LIMIT_PER_SEC = options.min_rate_per_sec;
 				}
 
-				logger.log('\n\nDECREASING RATE LIMIT to:', CURRENT_LIMIT_PER_SEC + ', detected max:', detected_max_rate_per_sec + ', prev limit:', prev_limit, '\n\n');
+				logger.log('\n\nDECREASING RATE LIMIT to:', CURRENT_LIMIT_PER_SEC + ', detected max:', detected_max_rate_per_sec +
+					', prev limit:', prev_limit, '\n\n');
 				setTimeout(() => {
 					allow_decrease = true;									// allow decreae to happen again (few seconds)
 				}, 1000 * 5);
