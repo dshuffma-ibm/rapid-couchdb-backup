@@ -46,3 +46,4 @@ scripts/reports
 *.irx
 *.zip
 _backup_docs.json
+_old_backup.json

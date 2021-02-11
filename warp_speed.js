@@ -10,11 +10,12 @@ module.exports = function (logger) {
 			info: () => { }
 		};
 	}
+	const async = require('async');
 	const misc = require('./libs/misc.js')();
 	const async_rl = require('./libs/async_rate.js')(logger);
 
 	//------------------------------------------------------------
-	// Bacup a CouchDB database
+	// Bacup a CouchDB database (this is the only exposed function in the lib)
 	//------------------------------------------------------------
 	/*
 	options: {
@@ -59,7 +60,12 @@ module.exports = function (logger) {
 		}
 
 		// go go gadget
-		get_db_data((errors, data) => {									// get the sequence number and count the docs
+		get_db_data((internal_errors, data) => {						// get the sequence number and count the docs
+			if (internal_errors) {
+				logger.error('preflight errors:\n', internal_errors);
+				return cb({ internal_errors });
+			}
+
 			logger.log('backup preflight complete.', data);
 			doc_count = data.doc_count;									// hoist scope
 
@@ -71,7 +77,7 @@ module.exports = function (logger) {
 				head_room_percent: options.head_room_percent,
 				_pause: false,
 				request_opts_builder: (iter) => {						// build the options for each batch clouant api
-					const skip = iter * data.batch_size;
+					const skip = (iter - 1) * data.batch_size;
 					return {
 						method: 'GET',
 						baseUrl: options.db_connection,
@@ -90,9 +96,8 @@ module.exports = function (logger) {
 					logger.error(JSON.stringify(errs, null, 2));
 				} else {
 					// dsh todo process changes since start
-					const end = Date.now();
-					const elapsed = end - start;
-					logger.log('[fin] doc backup complete @', end, misc.friendly_ms(elapsed));
+					const elapsed = Date.now() - start;
+					logger.log('[fin] doc backup complete.', misc.friendly_ms(elapsed));
 				}
 				prepare_for_death();
 			});
@@ -134,28 +139,44 @@ module.exports = function (logger) {
 		// get initial db data to figure out the batch size
 		// ------------------------------------------------------
 		function get_db_data(data_cb) {
-			couch.get_db_data({ db_name: options.db_name }, (err, resp) => {							// first get the db data for the doc count
-				if (err) {
-					logger.error('[stats] unable to get basic db data. e:', err);
-					return data_cb(err, null);
+			async.parallel([
+
+				// ---- Get basic db data ---- //
+				(join) => {
+					couch.get_db_data({ db_name: options.db_name }, (err, resp) => {				// first get the db data for the doc count
+						if (err) {
+							logger.error('[stats] unable to get basic db data. e:', err);
+						}
+						return join(err, resp);
+					});
+				},
+
+				// ---- Get _change sequence ---- //
+				(join) => {
+					couch.get_changes({ db_name: options.db_name, since: 'now' }, (err, resp) => {	// get the changes feed and grab the last seq
+						if (err) {
+							logger.error('[stats] unable to get db changes. e:', err);
+						}
+						return join(err, resp);
+					});
+				}
+
+			], (error, resp) => {
+				if (error || !resp || !resp[0] || !resp[1]) {
+					logger.error('[stats] missing data');
+					return data_cb(error, null);
 				} else {
-					const avg_doc_bytes = (resp.doc_count === 0) ? 0 : resp.sizes.file / resp.doc_count;
+					const resp1 = resp[0];
+					const resp2 = resp[1];
+					const avg_doc_bytes = (resp1.doc_count === 0) ? 0 : resp1.sizes.external / resp1.doc_count;
 					const batch_size = (avg_doc_bytes === 0) ? 0 : Math.floor(options.batch_get_bytes_goal / avg_doc_bytes);
-					const doc_count = resp.doc_count;
-					logger.log('[stats] size:', misc.friendly_bytes(resp.sizes.file));
+					const doc_count = resp1.doc_count;
+					logger.log('[stats] size:', misc.friendly_bytes(resp1.sizes.external));
 					logger.log('[stats] docs:', misc.friendly_number(doc_count));
 					logger.log('[stats] avg doc:', misc.friendly_bytes(avg_doc_bytes));
 					logger.log('[stats] batch size:', batch_size);
-
-					couch.get_changes({ db_name: options.db_name, since: 'now' }, (err2, resp2) => {	// get the changes feed and grab the last seq
-						if (err2) {
-							logger.error('[stats] unable to get db changes. e:', err2);
-							return data_cb(err2, null);
-						} else {
-							const seq = resp2.last_seq;
-							return data_cb(err, { batch_size, seq, doc_count });						// pass the data we need on
-						}
-					});
+					const seq = resp2.last_seq;
+					return data_cb(null, { batch_size, seq, doc_count });						// pass the data we need on
 				}
 			});
 		}

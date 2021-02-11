@@ -49,7 +49,7 @@ module.exports = function (logger) {
 			const elapsed_ms = Date.now() - start;
 			logger.log('- running for: ' + misc.friendly_ms(elapsed_ms) + ', stalled apis:', Object.keys(stalled_ids).length + ', pending apis:',
 				Object.keys(pending_ids).length + ', current rate:', Object.keys(ids).length + '/sec, max:', detected_max_rate_per_sec + '/sec');
-		}, 1 * 1000);
+		}, 10 * 1000);
 
 		// --------------------------------------------
 		// spin up aysnc requests as fast as possible but backoff once a 429 is reached
@@ -64,15 +64,9 @@ module.exports = function (logger) {
 					const req_options = options.request_opts_builder(id);
 					req_options._tx_id = id;
 
-					const elapsed_ms = Date.now() - start;
 					const percent = (options.count === 0) ? 0 : (on / options.count * 100);
-					const estimated_total_ms = (percent === 0) ? 0 : (1 / (percent / 100) * elapsed_ms);
-					const time_left = estimated_total_ms - elapsed_ms;
-
 					logger.log('[spawn] sending api', on + ', @ rate:', apis_per_sec + '/sec limit:', CURRENT_LIMIT_PER_SEC +
 						'/sec, detected max:', detected_max_rate_per_sec + '/sec, reqs sent:', percent.toFixed(1) + '%');
-					logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:',
-						misc.friendly_ms(time_left), confidence(percent));
 
 					retry_req(JSON.parse(JSON.stringify(req_options)), (err, resp) => {
 						if (err) {
@@ -80,6 +74,12 @@ module.exports = function (logger) {
 						}
 						remove_api(id);
 						stall_loop(() => {													// stall the request cb if we are paused
+							const elapsed_ms = Date.now() - start;
+							const estimated_total_ms = (percent === 0) ? 0 : (1 / (percent / 100) * elapsed_ms);
+							const time_left = estimated_total_ms - elapsed_ms;
+							logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:',
+								misc.friendly_ms(time_left), confidence(percent));
+
 							const ret = {
 								body: (resp && resp.body) ? parse_json(resp) : null,
 								iter: id,
@@ -176,14 +176,14 @@ module.exports = function (logger) {
 
 		// how likely is the time estimate - more likely the longer we run
 		function confidence(per) {
-			if (per >= 75) {
-				return '(very high confidence in estimate)';
-			} else if (per >= 50) {
-				return '(high confidence in estimate)';
+			if (per >= 80) {
+				return '(very high confidence)';
+			} else if (per >= 60) {
+				return '(high confidence)';
 			} else if (per >= 2) {
-				return '(low confidence in estimate)';
+				return '(low confidence)';
 			} else {
-				return '(no confidence in estimate)';
+				return '(no confidence)';
 			}
 		}
 
