@@ -80,5 +80,59 @@ module.exports = function () {
 		return ret;
 	};
 
+	// ------------------------------------------------------
+	// Pull each doc field out of the response
+	// ------------------------------------------------------
+	exports.parse_for_docs = (body) => {
+		let ret = [];
+		if (body && body.rows) {
+			for (let i in body.rows) {
+				if (body.rows[i].doc) {
+					ret.push(body.rows[i].doc);
+				}
+			}
+		}
+		return ret;
+	};
+
+	// --------------------------------------------
+	// check the input options
+	// --------------------------------------------
+	exports.check_inputs = (opts) => {
+		const errors = [];
+		if (isNaN(opts.max_rate_per_sec)) {
+			errors.push('"max_rate_per_sec" must be a number');
+		}
+		if (isNaN(opts.max_parallel)) {
+			errors.push('"max_parallel" must be a number');
+		}
+		if (isNaN(opts.head_room_percent)) {
+			errors.push('"head_room_percent" must be a number');
+		}
+		if (isNaN(opts.min_rate_per_sec)) {
+			errors.push('"min_rate_per_sec" must be a number');
+		}
+		if (isNaN(opts.batch_get_bytes_goal)) {
+			errors.push('"batch_get_bytes_goal" must be a number');
+		}
+
+		if (!opts.db_connection || typeof opts.db_connection !== 'string') {
+			errors.push('"db_connection" must be a string');
+		}
+		if (!opts.db_name || typeof opts.db_name !== 'string') {
+			errors.push('"db_name" must be a string');
+		}
+
+		if (!opts.write_stream) {
+			errors.push('"write_stream" must be a stream');
+		}
+
+		if (opts.head_room_percent < 0 || opts.head_room_percent >= 100) {
+			errors.push('"head_room_percent" must be >= 0 and < 100');
+		}
+
+		return errors;
+	};
+
 	return exports;
 };

@@ -31,16 +31,6 @@ module.exports = function (logger) {
 		const stalled_ids = {};
 		let log_interval = null;
 
-		options.min_rate_per_sec = options.min_rate_per_sec || 2;		// default
-		options.max_parallel = options.max_parallel || 10;				// default
-		options.head_room_percent = options.head_room_percent || 20;	// default
-
-		const input_errors = check_inputs(options);						// check if there are any arg mistakes
-		if (input_errors.length > 0) {
-			clearInterval(log_interval);
-			return finish_cb({ input_errors });							// get the hell out of here
-		}
-
 		const requests = [];											// build a dummy array, 1 per request we expect to do
 		for (let i = 1; i <= options.count; i++) {
 			requests.push(i);
@@ -314,42 +304,6 @@ module.exports = function (logger) {
 			logger.error('unable to parse response to json:', e);
 		}
 		return json;
-	}
-
-	// --------------------------------------------
-	// check the input options
-	// --------------------------------------------
-	function check_inputs(opts) {
-		const errors = [];
-		if (isNaN(opts.count)) {
-			errors.push('"count" must be a number');
-		}
-		if (isNaN(opts.max_rate_per_sec)) {
-			errors.push('"max_rate_per_sec" must be a number');
-		}
-		if (isNaN(opts.max_parallel)) {
-			errors.push('"max_parallel" must be a number');
-		}
-		if (isNaN(opts.head_room_percent)) {
-			errors.push('"head_room_percent" must be a number');
-		}
-		if (isNaN(opts.min_rate_per_sec)) {
-			errors.push('"min_rate_per_sec" must be a number');
-		}
-		if (typeof opts.request_opts_builder !== 'function') {
-			errors.push('"request_opts_builder" must be a function');
-		}
-
-		if (opts.head_room_percent < 0 || opts.head_room_percent >= 100) {
-			errors.push('"head_room_percent" must be >= 0 and < 100');
-		}
-
-		const test_opts = opts.request_opts_builder(777);
-		if (typeof test_opts !== 'object') {
-			errors.push('"request_opts_builder" must return an object');
-		}
-
-		return errors;
 	}
 
 	return exports;

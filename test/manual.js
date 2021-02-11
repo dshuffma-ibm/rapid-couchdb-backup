@@ -2,7 +2,6 @@
 const fs = require('fs');
 const secrets = require('../env/secrets.json');
 const rapid_backup = require('../warp_speed.js')(console);
-let target_stream = fs.createWriteStream('./_backup_docs.json');
 
 // ---------------------------------- Editable Settings  ---------------------------------- //
 const BATCH_GET_BYTES_GOAL = 1 * 1024 * 1024;			// MiB
@@ -35,7 +34,7 @@ const opts = {
 	max_parallel: MAX_PARALLEL,
 	head_room_percent: HEAD_ROOM_PERCENT,
 	batch_get_bytes_goal: BATCH_GET_BYTES_GOAL,
-	target_stream: target_stream,
+	write_stream: fs.createWriteStream('./_backup_docs.json'),
 };
 rapid_backup.backup(opts, () => {
 	console.log('fin.');
