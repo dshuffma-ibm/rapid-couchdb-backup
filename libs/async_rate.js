@@ -13,7 +13,7 @@ module.exports = function (logger) {
 		count: 100,							// number of http requests we will be sending
 		max_rate_per_sec: 50,				// the maximum number of api requests to send per second (upper bound)
 		max_parallel: 10,					// [optional] how many pending apis can there ever be
-		head_room_percent: 80,				// [optional] how much of the real rate limit should be used for this task (80 -> 80% of the detected rate limit)
+		head_room_percent: 20,				// [optional]
 		min_rate_per_sec: 2,				// [optional]
 		request_opts_builder: (iter)=> {}	// function to build the http request options
 		_pause: false						// if true, apis will stop being sent, stall
@@ -33,7 +33,7 @@ module.exports = function (logger) {
 
 		options.min_rate_per_sec = options.min_rate_per_sec || 2;		// default
 		options.max_parallel = options.max_parallel || 10;				// default
-		options.head_room_percent = options.head_room_percent || 80;	// default
+		options.head_room_percent = options.head_room_percent || 20;	// default
 
 		const input_errors = check_inputs(options);						// check if there are any arg mistakes
 		if (input_errors.length > 0) {
@@ -115,7 +115,7 @@ module.exports = function (logger) {
 				const current_rate_per_sec = Object.keys(ids).length;
 				const prev_limit = CURRENT_LIMIT_PER_SEC;
 				detected_max_rate_per_sec = current_rate_per_sec;			// this is likely the official rate limit, store it for logs
-				CURRENT_LIMIT_PER_SEC = Math.floor(current_rate_per_sec * (options.head_room_percent / 100));
+				CURRENT_LIMIT_PER_SEC = Math.floor(current_rate_per_sec * ((100 - options.head_room_percent) / 100));
 
 				if (CURRENT_LIMIT_PER_SEC >= prev_limit) {					// if the new "decrease" is greater than old one... forget it, decrement old one instead
 					CURRENT_LIMIT_PER_SEC = prev_limit - 1;
@@ -338,6 +338,10 @@ module.exports = function (logger) {
 		}
 		if (typeof opts.request_opts_builder !== 'function') {
 			errors.push('"request_opts_builder" must be a function');
+		}
+
+		if (opts.head_room_percent < 0 || opts.head_room_percent >= 100) {
+			errors.push('"head_room_percent" must be >= 0 and < 100');
 		}
 
 		const test_opts = opts.request_opts_builder(777);

@@ -15,7 +15,7 @@ let ending = false;				// dsh todo test code remove me
 const BATCH_GET_BYTES_GOAL = 1 * 1024 * 1024;			// MiB
 let MAX_RATE_PER_SEC = 10;								// the maximum number of api requests to send per second
 let MAX_PARALLEL = 30;									// this can be really high, ideally the rate limiter is controlling the load, not this field
-const HEAD_ROOM_PERCENT = 80;	 						// how much of the real rate limit should be used for this task (80 -> 80% of the rate limit)
+const HEAD_ROOM_PERCENT = 20;	 						// how much of the real rate limit should be left unused. (20% -> will use 80% of the rate limit)
 
 // ------------------------------------------------
 // [test runs]
@@ -70,7 +70,23 @@ get_db_data((errors, data) => {								// get the sequence number and count the 
 			return req_options;
 		}
 	};
-	async_rl.async_reqs_limit(async_options, (response, req_cb) => {
+	async_rl.async_reqs_limit(async_options, (resp, req_cb) => {
+		handle_docs(resp);
+		return req_cb();
+	}, (errs) => {												// all done!
+		if (errs) {
+			console.error('[fin] doc backup stopped. errors:');
+			console.error(JSON.stringify(errs, null, 2));
+		} else {
+			const end = Date.now();
+			const elapsed = end - start;
+			console.log('[fin] doc backup complete @', end, misc.friendly_ms(elapsed));
+		}
+		prepare_for_death();
+	});
+
+	// handle the docs in the couchdb responses - write the docs to the stream
+	function handle_docs(response) {
 		const body = response ? response.body : null;
 		if (body && body.rows) {
 			const elapsed_ms = response ? response.elapsed_ms : 0;
@@ -98,18 +114,7 @@ get_db_data((errors, data) => {								// get the sequence number and count the 
 				console.log('[write] wrote docs from batch api:', api_id + ', # docs:', docs.length + ', total:', finished_docs);
 			}
 		}
-		return req_cb();
-	}, (errs) => {												// all done!
-		if (errs) {
-			console.error('[fin] doc backup stopped. errors:');
-			console.error(JSON.stringify(errs, null, 2));
-		} else {
-			const end = Date.now();
-			const elapsed = end - start;
-			console.log('[fin] doc backup complete @', end, misc.friendly_ms(elapsed));
-		}
-		process.exit(1);		// dsh todo remove this...
-	});
+	}
 });
 
 // ------------------------------------------------------
