@@ -15,18 +15,24 @@ module.exports = function (logger) {
 		max_parallel: 10,					// [optional] how many pending apis can there ever be
 		head_room_percent: 20,				// [optional]
 		min_rate_per_sec: 2,				// [optional]
+		starting_rate_per_sec: 2,			// [optional]
+		start: 0,
 		request_opts_builder: (iter)=> {}	// function to build the http request options
 		_pause: false						// if true, apis will stop being sent, stall
+
 	}
 	*/
+	// min rates in cloudant:
+	// - 5 global req/sec
+	// - 100 reads/sec
 	exports.async_reqs_limit = (options, request_cb, finish_cb) => {
-		const start = Date.now();
+		const start = options.start || Date.now();
 		let on = 0;
 		let ids = {};
 		let pending_ids = {};
 		let allow_decrease = true;
 		let limit_hit = false;
-		let CURRENT_LIMIT_PER_SEC = 2;									// start off at 2, increase from here
+		let CURRENT_LIMIT_PER_SEC = options.starting_rate_per_sec || 2;	// start off at 2, increase from here
 		let detected_max_rate_per_sec = 0;
 		const stalled_ids = {};
 		let log_interval = null;

@@ -48,9 +48,9 @@ const cle = cl.backup(
 		const elapsed = Date.now() - start;
 		console.log('took', misc.friendly_ms(elapsed));
 		if (err) {
-			console.error('Failed! ' + err);
+			console.error('Failed! ', err);
 		} else {
-			console.error('Success! ' + data);
+			console.error('Success! ', data);
 		}
 	});
 

@@ -62,6 +62,7 @@ module.exports = function (logger) {
 
 			// pase 1 - get doc ids
 			phase1(data, () => {
+				logger.log('\nphase 1 complete.', misc.friendly_ms(Date.now() - start), '\n');
 
 				// phase 2 - get docs
 				phase2(data, (errs) => {
@@ -70,12 +71,18 @@ module.exports = function (logger) {
 						logger.error(JSON.stringify(errs, null, 2));
 					} else {
 						// dsh todo process changes since start
-						const elapsed = Date.now() - start;
-						logger.log('[fin] doc backup complete.', misc.friendly_ms(elapsed));
+						logger.log('\nphase 2 complete.', misc.friendly_ms(Date.now() - start), '\n');
 
-						// dsh todo check if we are missing docs...
+						if (finished_docs !== data.doc_count) {
+							logger.error('[fin] missing docs... found:', finished_docs, 'db:', data.doc_count);
+						} else {
+							logger.log('[fin] the doc backup count is correct.');
+						}
 					}
-					prepare_for_death();
+					prepare_for_death(() => {
+						logger.log('[fin] doc backup complete.', misc.friendly_ms(Date.now() - start));
+						return cb(null);							// all done
+					});
 				});
 			});
 		});
@@ -84,7 +91,9 @@ module.exports = function (logger) {
 		function phase1(data, cb) {
 			const ID_BATCH = 20000;
 			async_options = {
+				start: start,
 				count: calc_count(),									// calc the number of batch apis we will send
+				starting_rate_per_sec: 2,
 				max_rate_per_sec: options.max_rate_per_sec,
 				max_parallel: options.max_parallel,
 				head_room_percent: options.head_room_percent,
@@ -127,7 +136,9 @@ module.exports = function (logger) {
 		// phase 2
 		function phase2(data, cb) {
 			async_options = {
+				start: start,
 				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_ids.length / data.batch_size),	// calc the number of batch apis we will send
+				starting_rate_per_sec: 50,
 				max_rate_per_sec: 80,
 				min_rate_per_sec: 80,
 				max_parallel: 50,
@@ -156,9 +167,6 @@ module.exports = function (logger) {
 				if (errs) {
 					logger.error('[phase2] backup may not be complete. errors:');
 					logger.error(JSON.stringify(errs, null, 2));
-				} else {
-					const elapsed = Date.now() - start;
-					logger.log('[phase2] doc backup complete.', misc.friendly_ms(elapsed));
 				}
 				return cb();
 			});
@@ -256,11 +264,11 @@ module.exports = function (logger) {
 		// ------------------------------------------------------
 		// end the backup
 		// ------------------------------------------------------
-		function prepare_for_death() {
+		function prepare_for_death(write_cb) {
 			logger.log('[write] ending write stream');
 			options.write_stream.write('\n');
 			options.write_stream.end('', 'utf8', function () {
-				process.exit();
+				return write_cb();
 			});
 		}
 	};
