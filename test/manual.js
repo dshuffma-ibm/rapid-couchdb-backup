@@ -87,6 +87,4 @@ const opts = {
 	batch_get_bytes_goal: BATCH_GET_BYTES_GOAL,
 	write_stream: fs.createWriteStream('./_backup_docs.json'),
 };
-rapid_couchdb.backup(opts, () => {
-	console.log('fin.');
-});
+rapid_couchdb.backup(opts, () => { });

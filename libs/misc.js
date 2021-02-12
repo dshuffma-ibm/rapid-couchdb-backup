@@ -57,7 +57,7 @@ module.exports = function () {
 		else if (num > 1000 * 1000 * 1000) { ret = (num / 1000 / 1000 / 1000).toFixed(dec) + 'B'; }					// format for billions
 		else if (num > 1000 * 1000) { ret = (num / 1000 / 1000).toFixed(dec) + 'M'; }								// format for millions
 		else if (num > 1000) { ret = (num / 1000).toFixed(dec) + 'K'; }												// format for thousands
-		else { ret = num.toFixed(dec); }																			// format to base
+		else { ret = num.toFixed(0); }																				// format to base
 		return ret;
 	};
 

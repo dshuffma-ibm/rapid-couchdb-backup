@@ -51,11 +51,11 @@ module.exports = function (logger) {
 		// go go gadget
 		get_db_data((internal_errors, data) => {						// get the sequence number and count the docs
 			if (internal_errors) {
-				logger.error('preflight errors:\n', internal_errors);
+				logger.error('[stats] preflight errors:\n', internal_errors);
 				return cb({ internal_errors });
 			}
 
-			logger.log('backup preflight complete.');
+			logger.log('[stats] backup preflight complete.');
 			doc_count = data.doc_count;									// hoist scope
 
 			logger.log('\nstarting doc backup @', Date.now());
@@ -197,12 +197,12 @@ module.exports = function (logger) {
 				query: '&since=' + data.seq + '&include_docs=true&limit=' + data.batch_size
 			};
 			couch.get_changes(opts, (err, body) => {						// get the changes feed
-				if (err) {
+				if (err || !body.results) {
 					logger.error('[phase 3] unable to get db changes. e:', err);
 					return cb();
 				}
 
-				if (body.results && body.results.length === 0) {
+				if (body.results.length === 0) {
 					logger.log('[phase 3] no changes since backup start.');
 					return cb();
 				} else {
@@ -310,15 +310,16 @@ module.exports = function (logger) {
 					return data_cb(error, null);
 				} else {
 					const resp1 = resp[0];
-					const resp2 = resp[1];
 					const avg_doc_bytes = (resp1.doc_count === 0) ? 0 : resp1.sizes.external / resp1.doc_count;
 					const batch_size = (avg_doc_bytes === 0) ? 0 : Math.floor(options.batch_get_bytes_goal / avg_doc_bytes);
 					const doc_count = resp1.doc_count;
+					const del_count = resp1.doc_del_count;
+					const seq = resp[1].last_seq;
 					logger.log('[stats] size:', misc.friendly_bytes(resp1.sizes.external));
 					logger.log('[stats] docs:', misc.friendly_number(doc_count));
 					logger.log('[stats] avg doc:', misc.friendly_bytes(avg_doc_bytes));
 					logger.log('[stats] batch size:', batch_size);
-					const seq = resp2.last_seq;
+					logger.log('[stats] deleted docs:', misc.friendly_number(del_count), '-', (del_count / (del_count + doc_count) * 100).toFixed(1) + '%');
 					return data_cb(null, { batch_size, seq, doc_count });						// pass the data we need on
 				}
 			});
