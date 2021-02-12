@@ -35,6 +35,7 @@ module.exports = function (logger) {
 		let finished_docs = 0;
 		let async_options = {};
 		let doc_count = 0;
+		let doc_ids = [];
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
@@ -58,20 +59,93 @@ module.exports = function (logger) {
 			doc_count = data.doc_count;									// hoist scope
 
 			logger.log('\nstarting doc backup @', Date.now());
+
+			// pase 1 - get doc ids
+			phase1(data, () => {
+
+				// phase 2 - get docs
+				phase2(data, (errs) => {
+					if (errs) {
+						logger.error('[fin] backup may not be complete. errors:');
+						logger.error(JSON.stringify(errs, null, 2));
+					} else {
+						// dsh todo process changes since start
+						const elapsed = Date.now() - start;
+						logger.log('[fin] doc backup complete.', misc.friendly_ms(elapsed));
+
+						// dsh todo check if we are missing docs...
+					}
+					prepare_for_death();
+				});
+			});
+		});
+
+		// phase 1
+		function phase1(data, cb) {
+			const ID_BATCH = 20000;
 			async_options = {
-				count: (data.batch_size === 0) ? 0 : Math.ceil(data.doc_count / data.batch_size),		// calc the number of batch apis we will send
+				count: calc_count(),									// calc the number of batch apis we will send
 				max_rate_per_sec: options.max_rate_per_sec,
 				max_parallel: options.max_parallel,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
 				request_opts_builder: (iter) => {						// build the options for each batch clouant api
-					const skip = (iter - 1) * data.batch_size;
+					const skip = (iter - 1) * 20000;
 					return {
 						method: 'GET',
 						baseUrl: options.db_connection,
-						url: '/' + options.db_name + '/_all_docs?include_docs=true&limit=' + data.batch_size + '&skip=' + skip,
+						url: '/' + options.db_name + '/_all_docs?limit=' + ID_BATCH + '&skip=' + skip,
 						timeout: 2 * 60 * 1000,
-						_name: 'batch get',								// name to use in logs
+						_name: 'phase1',								// name to use in logs
+					};
+				}
+			};
+			async_rl.async_reqs_limit(async_options, (resp, req_cb) => {
+				handle_ids(resp);
+				return req_cb();
+			}, (errs) => {												// all done!
+				if (errs) {
+					logger.error('[phase1] backup may not be complete. errors:');
+					logger.error(JSON.stringify(errs, null, 2));
+				} else {
+					const elapsed = Date.now() - start;
+					logger.log('[phase1] doc backup complete.', misc.friendly_ms(elapsed));
+				}
+				return cb();
+			});
+
+			function calc_count() {
+				const MAX_IDS_IN_MEMORY = 1e6;
+				if (data.doc_count < MAX_IDS_IN_MEMORY) {
+					return Math.ceil(data.doc_count / ID_BATCH);
+				} else {
+					return Math.ceil(MAX_IDS_IN_MEMORY / ID_BATCH);
+				}
+			}
+		}
+
+		// phase 2
+		function phase2(data, cb) {
+			async_options = {
+				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_ids.length / data.batch_size),	// calc the number of batch apis we will send
+				max_rate_per_sec: 80,
+				min_rate_per_sec: 80,
+				max_parallel: 50,
+				head_room_percent: options.head_room_percent,
+				_pause: false,
+				request_opts_builder: (iter) => {						// build the options for each batch clouant api
+					const start = (iter - 1) * data.batch_size;
+					const end = start + data.batch_size;
+					return {
+						method: 'POST',
+						baseUrl: options.db_connection,
+						url: '/' + options.db_name + '/_bulk_get',
+						body: JSON.stringify({ docs: doc_ids.slice(start, end) }),
+						headers: {
+							'Content-Type': 'application/json'
+						},
+						timeout: 2 * 60 * 1000,
+						_name: 'phase2',								// name to use in logs
 					};
 				}
 			};
@@ -80,16 +154,15 @@ module.exports = function (logger) {
 				return req_cb();
 			}, (errs) => {												// all done!
 				if (errs) {
-					logger.error('[fin] backup may not be complete. errors:');
+					logger.error('[phase2] backup may not be complete. errors:');
 					logger.error(JSON.stringify(errs, null, 2));
 				} else {
-					// dsh todo process changes since start
 					const elapsed = Date.now() - start;
-					logger.log('[fin] doc backup complete.', misc.friendly_ms(elapsed));
+					logger.log('[phase2] doc backup complete.', misc.friendly_ms(elapsed));
 				}
-				prepare_for_death();
+				return cb();
 			});
-		});
+		}
 
 		// handle the docs in the couchdb responses - write the docs to the stream
 		function handle_docs(response) {
@@ -118,6 +191,19 @@ module.exports = function (logger) {
 
 			function write_flushed() {
 				logger.log('[write] wrote docs from batch api:', api_id + ', # docs:', docs.length + ', total:', finished_docs);
+			}
+		}
+
+		// handle the doc ids in the couchdb responses
+		function handle_ids(response) {
+			const body = response ? response.body : null;
+			const api_id = response ? response.iter : 0;
+			const elapsed_ms = response ? response.elapsed_ms : 0;
+			const ids = misc.parse_for_ids(body);
+
+			if (ids && ids.length > 0) {
+				logger.log('[rec] received resp for api:', api_id + ', # ids:', ids.length + ', took:', misc.friendly_ms(elapsed_ms));
+				doc_ids = doc_ids.concat(ids);
 			}
 		}
 

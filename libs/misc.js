@@ -85,10 +85,25 @@ module.exports = function () {
 	// ------------------------------------------------------
 	exports.parse_for_docs = (body) => {
 		let ret = [];
+		if (body && body.results) {
+			for (let i in body.results) {
+				if (body.results[i].docs && body.results[i].docs[0]) {
+					ret.push(body.results[i].docs[0].ok);
+				}
+			}
+		}
+		return ret;
+	};
+
+	// ------------------------------------------------------
+	// Pull each doc id out of the response
+	// ------------------------------------------------------
+	exports.parse_for_ids = (body) => {
+		let ret = [];
 		if (body && body.rows) {
 			for (let i in body.rows) {
-				if (body.rows[i].doc) {
-					ret.push(body.rows[i].doc);
+				if (body.rows[i].id) {
+					ret.push({ id: body.rows[i].id, rev: body.rows[i].rev });
 				}
 			}
 		}
