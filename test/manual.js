@@ -87,18 +87,11 @@ const opts = {
 	batch_get_bytes_goal: BATCH_GET_BYTES_GOAL,
 	write_stream: fs.createWriteStream('./_backup_docs.json'),
 };
-rapid_couchdb.backup(opts, () => {
-	console.log('the end');
-	/*
-	const handles = process._getActiveHandles();
-	for (let i in handles) {
-		console.log(i, typeof handles[i], handles[i]);
-	}*/
-	//console.log('the end 2???', process._getActiveRequests());
-	/*
-		0 object WriteStream {
-		1 object WriteStream {
-		2 object Timer { listOnTimeout [problem]
-		3 object Timer { listOnTimeout [problem]
-	*/
+rapid_couchdb.backup(opts, (errors, date_completed) => {
+	console.log('the end:', date_completed);
+	if (errors) {
+		console.log('looks like we had errors:', JSON.stringify(errors, null, 2));
+	}
+
+	//console.log(process._getActiveHandles());
 });

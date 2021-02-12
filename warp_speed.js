@@ -36,6 +36,7 @@ module.exports = function (logger) {
 		let async_options = {};
 		let doc_count = 0;
 		let doc_stubs = [];
+		let db_errors = [];
 		const DOC_STUB_BATCH_SIZE = 20000;								// pull doc stubs 20k at a time
 		const MAX_STUBS_IN_MEMORAY = 5e6;								// keep up to 5M doc stubs in memory (doc stubs are around 128 bytes each)
 		logger.log('backup preflight starting @', start);
@@ -71,11 +72,19 @@ module.exports = function (logger) {
 
 				// phase 3 - walk changes since start
 				// dsh todo test phase 3!!
-				phase3(data, (errs) => {
+				phase3(data, () => {
+					const d = new Date();
 					logger.log('[phase 3] complete.', misc.friendly_ms(Date.now() - start), '\n');
+
 					prepare_for_death(() => {
 						logger.log('[fin] doc backup complete.', misc.friendly_ms(Date.now() - start));
-						return cb(null);									// all done
+						logger.log('[fin] backup errors:', db_errors.length);
+						logger.log('[fin]', d, '\n');
+
+						if (db_errors.length === 0) {
+							db_errors = null;
+						}
+						return cb(db_errors, d);									// all done
 					});
 				});
 			});
@@ -84,15 +93,15 @@ module.exports = function (logger) {
 		// repeat phase 1 and 2 until all docs are backed up. will do DOC_STUB_BATCH_SIZE doc-stubs per loop. - RECURSIVE
 		// i'm doing this loop to limit the size of the doc stubs we keep in memory.
 		function millions_doc_loop(data, million_cb) {
-			data._doc_id_iter = data._doc_id_iter || 1;						// init if needed
+			data._doc_id_iter = data._doc_id_iter || 1;								// init if needed
 			data._skip_offset = data._skip_offset || 0;								// init if needed
-			if (data._doc_id_iter * MAX_STUBS_IN_MEMORAY >= 100e6) {		// don't recurse forever, at some point give up
+			if (data._doc_id_iter * MAX_STUBS_IN_MEMORAY >= 100e6) {				// don't recurse forever, at some point give up
 				logger.log('[loop] recursed on doc stubs for too long. giving up.', data._doc_id_iter);
 				return million_cb();
 			}
 
 			// pase 1 - get doc stubs
-			doc_stubs = [];													// reset per loop
+			doc_stubs = [];															// reset per loop
 			phase1(data, (_, rec_doc_count) => {
 				logger.log('[phase 1] complete.', misc.friendly_ms(Date.now() - start), '\n');
 
@@ -107,10 +116,10 @@ module.exports = function (logger) {
 						logger.log('[phase 2] there are more docs to handle. going back to phase 1. loops:', data._doc_id_iter + '/' + data.loops, '\n');
 						data._skip_offset += MAX_STUBS_IN_MEMORAY;
 						data._doc_id_iter++;
-						return millions_doc_loop(data, million_cb);			// recurse
+						return millions_doc_loop(data, million_cb);					// recurse
 					} else {
 						logger.log('[phase 2] complete.', misc.friendly_ms(Date.now() - start), 'loops:', data._doc_id_iter + '/' + data.loops, '\n');
-						return million_cb(errs);							// all done
+						return million_cb(errs);									// all done
 					}
 				});
 			});
@@ -122,30 +131,31 @@ module.exports = function (logger) {
 			let received_doc_count = 0;
 			async_options = {
 				start: start,
-				count: calc_count(),									// calc the number of batch apis we will send
-				starting_rate_per_sec: 2,								// start low, this is a global query
+				count: calc_count(),											// calc the number of batch apis we will send
+				starting_rate_per_sec: 2,										// start low, this is a global query
 				max_rate_per_sec: options.max_rate_per_sec,
 				max_parallel: options.max_parallel,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
-				request_opts_builder: (iter) => {						// build the options for each batch clouant api
+				request_opts_builder: (iter) => {								// build the options for each batch clouant api
 					const skip = (iter - 1) * DOC_STUB_BATCH_SIZE + data._skip_offset;
 					return {
 						method: 'GET',
 						baseUrl: options.db_connection,
 						url: '/' + options.db_name + '/_all_docs?limit=' + DOC_STUB_BATCH_SIZE + '&skip=' + skip,
 						timeout: 2 * 60 * 1000,
-						_name: 'phase1',								// name to use in logs
+						_name: 'phase1',										// name to use in logs
 					};
 				}
 			};
 			async_rl.async_reqs_limit(async_options, (resp, req_cb) => {
 				received_doc_count = handle_stubs(resp);
 				return req_cb();
-			}, (errs) => {												// all done!
+			}, (errs) => {														// all done!
 				if (errs) {
 					logger.error('[phase 1] backup may not be complete. errors:');
 					logger.error(JSON.stringify(errs, null, 2));
+					db_errors.push(errs);
 				} else {
 					const elapsed = Date.now() - start;
 					logger.log('[phase 1] doc backup complete.', misc.friendly_ms(elapsed));
@@ -165,7 +175,7 @@ module.exports = function (logger) {
 		// phase 2 - get the docs
 		function phase2(data, phase_cb) {
 			logger.log('[phase 2] starting...');
-			const CL_MIN_READ_RATE = 100;								// the reading rate of cloudant's cheapest plan
+			const CL_MIN_READ_RATE = 100;										// the reading rate of cloudant's cheapest plan
 			async_options = {
 				start: start,
 				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_stubs.length / data.batch_size),	// calc the number of batch apis we will send
@@ -175,7 +185,7 @@ module.exports = function (logger) {
 				max_parallel: 50,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
-				request_opts_builder: (iter) => {						// build the options for each batch clouant api
+				request_opts_builder: (iter) => {								// build the options for each batch clouant api
 					const start = (iter - 1) * data.batch_size;
 					const end = start + data.batch_size;
 					return {
@@ -187,17 +197,18 @@ module.exports = function (logger) {
 							'Content-Type': 'application/json'
 						},
 						timeout: 2 * 60 * 1000,
-						_name: 'phase2',								// name to use in logs
+						_name: 'phase2',										// name to use in logs
 					};
 				}
 			};
 			async_rl.async_reqs_limit(async_options, (resp, req_cb) => {
 				handle_docs(resp);
 				return req_cb();
-			}, (errs) => {												// all done!
+			}, (errs) => {														// all done!
 				if (errs) {
 					logger.error('[phase 2] backup may not be complete. errors:');
 					logger.error(JSON.stringify(errs, null, 2));
+					db_errors.push(errs);
 				}
 				return phase_cb();
 			});
@@ -205,7 +216,7 @@ module.exports = function (logger) {
 
 		// phase 3 - process any changes since we started the backup
 		function phase3(data, phase_cb) {
-			data._changes_iter = data._changes_iter || 1;					// init if needed
+			data._changes_iter = data._changes_iter || 1;						// init if needed
 			logger.log('[phase 3] starting... i:', data._changes_iter);
 
 			if (data._changes_iter >= 20) {
@@ -217,9 +228,10 @@ module.exports = function (logger) {
 				db_name: options.db_name,
 				query: '&since=' + data.seq + '&include_docs=true&limit=' + data.batch_size
 			};
-			couch.get_changes(opts, (err, body) => {						// get the changes feed
+			couch.get_changes(opts, (err, body) => {							// get the changes feed
 				if (err || !body.results) {
 					logger.error('[phase 3] unable to get db changes. e:', err);
+					db_errors.push(err);
 					return phase_cb();
 				}
 
@@ -274,11 +286,11 @@ module.exports = function (logger) {
 		// write the docs to the write stream
 		function write_docs_2_stream(api_id, docs_array) {
 			const write_okay = options.write_stream.write(JSON.stringify(docs_array) + '\n', 'utf8', write_flushed);
-			if (!write_okay) {								// the buffer is full, ALL STOP (wait for drain event)
+			if (!write_okay) {												// the buffer is full, ALL STOP (wait for drain event)
 				if (async_options._pause === false) {
 					async_options._pause = true;
 					options.write_stream.once('drain', function () {
-						async_options._pause = false;		// put it back
+						async_options._pause = false;						// put it back
 					});
 					//logger.log('[write] stalling couch reads b/c write stream is backed up');
 				}
@@ -353,7 +365,7 @@ module.exports = function (logger) {
 		}
 
 		// ------------------------------------------------------
-		// end the backup
+		// end the backup - flush the write stream
 		// ------------------------------------------------------
 		function prepare_for_death(write_cb) {
 			logger.log('[write] ending write stream');
