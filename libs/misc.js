@@ -112,7 +112,7 @@ module.exports = function () {
 	// ------------------------------------------------------
 	// Pull each doc id out of the response
 	// ------------------------------------------------------
-	exports.parse_for_ids = (body) => {
+	exports.parse_for_stubs = (body) => {
 		let ret = [];
 		if (body && body.rows) {
 			for (let i in body.rows) {
