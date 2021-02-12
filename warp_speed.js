@@ -66,7 +66,7 @@ module.exports = function (logger) {
 				if (finished_docs !== data.doc_count) {
 					logger.error('[fin] missing docs... found:', finished_docs, 'db:', data.doc_count);
 				} else {
-					logger.log('[fin] the doc backup count is correct.');
+					logger.log('[fin] the # of docs in backup matches the db:', finished_docs);
 				}
 
 				// phase 3 - walk changes since start
@@ -104,12 +104,12 @@ module.exports = function (logger) {
 					}
 
 					if (rec_doc_count > 0 && rec_doc_count === DOC_STUB_BATCH_SIZE) {	// if num of docs is the same as "limit" then there are more docs
-						data._doc_id_iter++;
+						logger.log('[phase 2] there are more docs to handle. going back to phase 1. loops:', data._doc_id_iter + '/' + data.loops, '\n');
 						data._skip_offset += MAX_STUBS_IN_MEMORAY;
-						logger.log('[phase 2] there are more docs to handle. going back to phase 1. i:', data._doc_id_iter, '\n');
+						data._doc_id_iter++;
 						return millions_doc_loop(data, million_cb);			// recurse
 					} else {
-						logger.log('[phase 2] complete.', misc.friendly_ms(Date.now() - start), 'i:', data._doc_id_iter, '\n');
+						logger.log('[phase 2] complete.', misc.friendly_ms(Date.now() - start), 'loops:', data._doc_id_iter + '/' + data.loops, '\n');
 						return million_cb(errs);							// all done
 					}
 				});
@@ -347,7 +347,7 @@ module.exports = function (logger) {
 					logger.log('[stats] batch size:', batch_size);
 					logger.log('[stats] deleted docs:', misc.friendly_number(del_count), '-', (del_count / (del_count + doc_count) * 100).toFixed(1) + '%');
 					logger.log('[stats] # phase loops:', loops);
-					return data_cb(null, { batch_size, seq, doc_count });					// pass the data we need on
+					return data_cb(null, { batch_size, seq, doc_count, loops });					// pass the data we need on
 				}
 			});
 		}

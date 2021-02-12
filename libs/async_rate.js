@@ -36,6 +36,7 @@ module.exports = function (logger) {
 		const stalled_ids = {};
 		let log_interval = null;
 		let http_errors = [];
+		let timer1, timer2;
 
 		const requests = [];											// build a dummy array, 1 per request we expect to do
 		for (let i = 1; i <= options.count; i++) {
@@ -44,6 +45,8 @@ module.exports = function (logger) {
 		logger.log('[launcher] starting', requests.length, 'batch doc reqs. max parallel:', options.max_parallel);
 		launcher(requests, options, request_cb, () => {
 			clearInterval(log_interval);
+			clearTimeout(timer1);
+			clearTimeout(timer2);
 			if (http_errors.length > 0) {
 				logger.error('[fin] there were http errors. :(\n', http_errors);
 				return finish_cb(http_errors);
@@ -127,11 +130,11 @@ module.exports = function (logger) {
 
 				logger.log('\n\nDECREASING RATE LIMIT to:', CURRENT_LIMIT_PER_SEC + ', detected max:', detected_max_rate_per_sec +
 					', prev limit:', prev_limit, '\n\n');
-				setTimeout(() => {
+				timer1 = setTimeout(() => {
 					allow_decrease = true;									// allow decreae to happen again (few seconds)
 				}, 1000 * 5);
 
-				setTimeout(() => {
+				timer2 = setTimeout(() => {
 					limit_hit = false;										// allow increase to happen again (many minutes)
 				}, 1000 * 60 * 60);
 			}
