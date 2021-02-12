@@ -73,6 +73,10 @@ const secrets = require('../env/secrets.json');
 //    took: 3.7 seconds [6.9MB]
 //    took: 3.7 seconds [6.9MB]
 //    took: 3.2 seconds [6.9MB]
+
+// warp 2 - large deletes
+// [test runs] - 285MB - 144k docs (436k deleted docs - 75%) 2014 batch size
+//   1, 80, 50 -> took: 39.8 seconds [82MB]
 // ------------------------------------------------
 const opts = {
 	db_connection: secrets.db_connection,

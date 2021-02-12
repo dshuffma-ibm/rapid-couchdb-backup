@@ -103,7 +103,7 @@ module.exports = (DB_CONNECTION_STRING) => {
 	/*
 		opts: {
 			db_name: "name of db",
-			query: "limit=1000",
+			query: "&limit=1000",
 		}
 	*/
 	couch.getAllDocs = (opts, cb) => {
@@ -127,10 +127,16 @@ module.exports = (DB_CONNECTION_STRING) => {
 	//------------------------------------------------------------
 	// Get _changes feed from db
 	//------------------------------------------------------------
+	/*
+		opts: {
+			db_name: "name of db",
+			query: "&since=asdf",
+		}
+	*/
 	couch.get_changes = (opts, cb) => {
 		const options = {
 			baseUrl: couch_url,
-			url: '/' + opts.db_name + '/_changes?style=main_only' + (opts.since ? '&since=' + opts.since : ''),
+			url: '/' + opts.db_name + '/_changes?style=main_only' + (opts.query ? opts.query : ''),
 			method: 'GET',
 			timeout: 90000,
 			headers: { 'Accept': 'application/json' }
@@ -143,6 +149,50 @@ module.exports = (DB_CONNECTION_STRING) => {
 			}
 			return cb(error, formatResponse(resp));
 		});
+	};
+
+	// ?
+	couch.getDesignDocView = (opts, cb) => {
+		const options = {
+			method: 'GET',
+			baseUrl: couch_url,
+			url: '/' + opts.db_name + '/' + opts._id + '/_view/' + opts.view + '?' + (opts.query ? opts.query : null),
+			timeout: 120000,
+			headers: {
+				'Accept': 'application/json'
+			}
+		};
+		request(options, (_, resp) => {
+			if (misc.is_error_code(misc.get_code(resp))) {
+				return cb(formatResponse(resp), null);
+			}
+			return cb(_, formatResponse(resp));
+		});
+	};
+
+	// ?
+	couch.bulkDatabase = (opts, payload, cb) => {
+		if (!payload || !payload.docs) {
+			return cb(400, { error: '"payload" argument not passed or its missing the "docs" field' });
+		} else {
+			const options = {
+				method: 'POST',
+				baseUrl: couch_url,
+				url: '/' + opts.db_name + '/_bulk_docs',
+				timeout: 120000,
+				body: JSON.stringify(payload),
+				headers: {
+					'Accept': 'application/json',
+					'Content-Type': 'application/json'
+				}
+			};
+			request(options, (_, resp) => {
+				if (misc.is_error_code(misc.get_code(resp))) {
+					return cb(formatResponse(resp), null);
+				}
+				return cb(_, formatResponse(resp));
+			});
+		}
 	};
 
 	return couch;

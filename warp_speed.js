@@ -80,9 +80,15 @@ module.exports = function (logger) {
 							logger.log('[fin] the doc backup count is correct.');
 						}
 					}
-					prepare_for_death(() => {
-						logger.log('[fin] doc backup complete.', misc.friendly_ms(Date.now() - start));
-						return cb(null);							// all done
+
+					// phase 3 - walk changes since start
+					// dsh todo test phase 3!!
+					phase3(data, (errs) => {
+						logger.log('\nphase 3 complete.', misc.friendly_ms(Date.now() - start), '\n');
+						prepare_for_death(() => {
+							logger.log('[fin] doc backup complete.', misc.friendly_ms(Date.now() - start));
+							return cb(null);							// all done
+						});
 					});
 				});
 			});
@@ -176,6 +182,46 @@ module.exports = function (logger) {
 			});
 		}
 
+		// phase 3
+		function phase3(data, cb) {
+			data._changes_iter = data._changes_iter || 1;					// init if needed
+			logger.log('[phase 3] starting... i:', data._changes_iter);
+
+			if (data._changes_iter >= 20) {
+				logger.log('[phase 3] recursed on changes for too long. giving up.');
+				return cb();
+			}
+
+			const opts = {
+				db_name: options.db_name,
+				query: '&since=' + data.seq + '&include_docs=true&limit=' + data.batch_size
+			};
+			couch.get_changes(opts, (err, body) => {						// get the changes feed
+				if (err) {
+					logger.error('[phase 3] unable to get db changes. e:', err);
+					return cb();
+				}
+
+				if (body.results && body.results.length === 0) {
+					logger.log('[phase 3] no changes since backup start.');
+					return cb();
+				} else {
+					const docs = misc.parse_for_docs_changes(body);
+					logger.log('[phase 3] parsing changes since backup start.', docs.length);
+					write_docs_2_stream('-', docs);
+
+					if (docs.length !== data.batch_size) {
+						logger.log('[phase 3] all changes since backup start are processed.');
+						return cb();
+					} else {
+						data._changes_iter++;
+						logger.log('[phase 3] there are more changes. getting next batch:', data._changes_iter);
+						return phase3(data, cb);
+					}
+				}
+			});
+		}
+
 		// handle the docs in the couchdb responses - write the docs to the stream
 		function handle_docs(response) {
 			const body = response ? response.body : null;
@@ -187,19 +233,9 @@ module.exports = function (logger) {
 				finished_docs += docs.length;					// keep track of the number of docs we have finished
 				const percent_docs = finished_docs / doc_count * 100;
 				logger.log('[rec] received resp for api:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
-					', total:', finished_docs, '[' + (percent_docs).toFixed(1) + '%]');
+					', total docs:', finished_docs, '[' + (percent_docs).toFixed(1) + '%]');
 				predict_time_left(percent_docs);
-
-				const write_okay = options.write_stream.write(JSON.stringify(docs) + '\n', 'utf8', write_flushed);
-				if (!write_okay) {								// the buffer is full, ALL STOP (wait for drain event)
-					if (async_options._pause === false) {
-						async_options._pause = true;
-						options.write_stream.once('drain', function () {
-							async_options._pause = false;		// put it back
-						});
-						//logger.log('[write] stalling couch reads b/c write stream is backed up');
-					}
-				}
+				write_docs_2_stream(api_id, docs);
 			}
 
 			// log much time is left
@@ -207,24 +243,25 @@ module.exports = function (logger) {
 				const job_elapsed_ms = Date.now() - start;
 				const estimated_total_ms = (percent_docs === 0) ? 0 : (1 / (percent_docs / 100) * job_elapsed_ms);
 				const time_left = estimated_total_ms - job_elapsed_ms;
-				logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left), confidence(percent_docs));
+				logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left));
 			}
+		}
 
-			// how likely is the time estimate - more likely the longer we run
-			function confidence(per) {
-				if (per >= 80) {
-					return '(very high confidence)';
-				} else if (per >= 60) {
-					return '(high confidence)';
-				} else if (per >= 2) {
-					return '(low confidence)';
-				} else {
-					return '(no confidence)';
+		// write the docs to the write stream
+		function write_docs_2_stream(api_id, docs_array) {
+			const write_okay = options.write_stream.write(JSON.stringify(docs_array) + '\n', 'utf8', write_flushed);
+			if (!write_okay) {								// the buffer is full, ALL STOP (wait for drain event)
+				if (async_options._pause === false) {
+					async_options._pause = true;
+					options.write_stream.once('drain', function () {
+						async_options._pause = false;		// put it back
+					});
+					//logger.log('[write] stalling couch reads b/c write stream is backed up');
 				}
 			}
 
 			function write_flushed() {
-				logger.log('[write] wrote docs from batch api:', api_id + ', # docs:', docs.length + ', total:', finished_docs);
+				logger.log('[write] wrote docs from batch api:', api_id + ', # docs:', docs_array.length + ', total docs:', finished_docs);
 			}
 		}
 
@@ -259,7 +296,7 @@ module.exports = function (logger) {
 
 				// ---- Get _change sequence ---- //
 				(join) => {
-					couch.get_changes({ db_name: options.db_name, since: 'now' }, (err, resp) => {	// get the changes feed and grab the last seq
+					couch.get_changes({ db_name: options.db_name, query: '&since=now' }, (err, resp) => {	// get the changes feed and grab the last seq
 						if (err) {
 							logger.error('[stats] unable to get db changes. e:', err);
 						}

@@ -96,6 +96,20 @@ module.exports = function () {
 	};
 
 	// ------------------------------------------------------
+	// Pull each doc field out of the changes response
+	// ------------------------------------------------------
+	exports.parse_for_docs_changes = (body) => {
+		let ret = [];
+		if (body && body.results) {
+			for (let i in body.results) {
+				if (body.results[i].doc) {
+					ret.push(body.results[i].doc);
+				}
+			}
+		}
+		return ret;
+	};
+	// ------------------------------------------------------
 	// Pull each doc id out of the response
 	// ------------------------------------------------------
 	exports.parse_for_ids = (body) => {

@@ -41,7 +41,7 @@ module.exports = function (logger) {
 		for (let i = 1; i <= options.count; i++) {
 			requests.push(i);
 		}
-		logger.log('starting', requests.length, 'batch doc reqs. max parallel:', options.max_parallel);
+		logger.log('[launcher] starting', requests.length, 'batch doc reqs. max parallel:', options.max_parallel);
 		launcher(requests, options, request_cb, () => {
 			clearInterval(log_interval);
 			if (http_errors.length > 0) {
