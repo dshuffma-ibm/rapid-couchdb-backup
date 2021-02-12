@@ -18,8 +18,7 @@ module.exports = function (logger) {
 		starting_rate_per_sec: 2,			// [optional]
 		start: 0,
 		request_opts_builder: (iter)=> {}	// function to build the http request options
-		_pause: false						// if true, apis will stop being sent, stall
-
+		_pause: false,						// if true, apis will stop being sent, stall
 	}
 	*/
 	// min rates in cloudant:
@@ -77,9 +76,9 @@ module.exports = function (logger) {
 					const req_options = options.request_opts_builder(id);
 					req_options._tx_id = id;
 
-					const percent = (options.count === 0) ? 0 : (on / options.count * 100);
+					const percent_sent = (options.count === 0) ? 0 : (on / options.count * 100);
 					logger.log('[spawn] sending api', on + ', @ rate:', apis_per_sec + '/sec limit:', CURRENT_LIMIT_PER_SEC +
-						'/sec, detected max:', detected_max_rate_per_sec + '/sec, reqs sent:', percent.toFixed(1) + '%');
+						'/sec, detected max:', detected_max_rate_per_sec + '/sec, reqs sent:', percent_sent.toFixed(1) + '%');
 
 					retry_req(JSON.parse(JSON.stringify(req_options)), (err, resp) => {
 						if (err) {
@@ -88,12 +87,6 @@ module.exports = function (logger) {
 						}
 						remove_api(id);
 						stall_loop(() => {													// stall the request cb if we are paused
-							const elapsed_ms = Date.now() - start;
-							const estimated_total_ms = (percent === 0) ? 0 : (1 / (percent / 100) * elapsed_ms);
-							const time_left = estimated_total_ms - elapsed_ms;
-							logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:',
-								misc.friendly_ms(time_left), confidence(percent));
-
 							const ret = {
 								body: (resp && resp.body) ? parse_json(resp) : null,
 								iter: id,
@@ -185,19 +178,6 @@ module.exports = function (logger) {
 				if (elapsed > 1000) {
 					delete ids[key];
 				}
-			}
-		}
-
-		// how likely is the time estimate - more likely the longer we run
-		function confidence(per) {
-			if (per >= 80) {
-				return '(very high confidence)';
-			} else if (per >= 60) {
-				return '(high confidence)';
-			} else if (per >= 2) {
-				return '(low confidence)';
-			} else {
-				return '(no confidence)';
 			}
 		}
 

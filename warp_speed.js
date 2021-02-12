@@ -60,6 +60,7 @@ module.exports = function (logger) {
 
 			logger.log('\nstarting doc backup @', Date.now());
 
+			// dsh todo repeat phase 1 and 2 per 10 million docs
 			// pase 1 - get doc ids
 			phase1(data, () => {
 				logger.log('\nphase 1 complete.', misc.friendly_ms(Date.now() - start), '\n');
@@ -89,17 +90,18 @@ module.exports = function (logger) {
 
 		// phase 1
 		function phase1(data, cb) {
+			logger.log('[phase 1] starting...');
 			const ID_BATCH = 20000;
 			async_options = {
 				start: start,
 				count: calc_count(),									// calc the number of batch apis we will send
-				starting_rate_per_sec: 2,
+				starting_rate_per_sec: 2,								// start low, this is a global query
 				max_rate_per_sec: options.max_rate_per_sec,
 				max_parallel: options.max_parallel,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
 				request_opts_builder: (iter) => {						// build the options for each batch clouant api
-					const skip = (iter - 1) * 20000;
+					const skip = (iter - 1) * ID_BATCH;
 					return {
 						method: 'GET',
 						baseUrl: options.db_connection,
@@ -114,17 +116,17 @@ module.exports = function (logger) {
 				return req_cb();
 			}, (errs) => {												// all done!
 				if (errs) {
-					logger.error('[phase1] backup may not be complete. errors:');
+					logger.error('[phase 1] backup may not be complete. errors:');
 					logger.error(JSON.stringify(errs, null, 2));
 				} else {
 					const elapsed = Date.now() - start;
-					logger.log('[phase1] doc backup complete.', misc.friendly_ms(elapsed));
+					logger.log('[phase 1] doc backup complete.', misc.friendly_ms(elapsed));
 				}
 				return cb();
 			});
 
 			function calc_count() {
-				const MAX_IDS_IN_MEMORY = 1e6;
+				const MAX_IDS_IN_MEMORY = 10e6;
 				if (data.doc_count < MAX_IDS_IN_MEMORY) {
 					return Math.ceil(data.doc_count / ID_BATCH);
 				} else {
@@ -135,12 +137,14 @@ module.exports = function (logger) {
 
 		// phase 2
 		function phase2(data, cb) {
+			logger.log('[phase 2] starting...');
+			const CL_MIN_READ_RATE = 100;								// the reading rate of cloudant's cheapest plan
 			async_options = {
 				start: start,
 				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_ids.length / data.batch_size),	// calc the number of batch apis we will send
-				starting_rate_per_sec: 50,
-				max_rate_per_sec: 80,
-				min_rate_per_sec: 80,
+				starting_rate_per_sec: Math.floor(CL_MIN_READ_RATE * ((100 - options.head_room_percent) / 100)),	// start high, this is a read query
+				max_rate_per_sec: CL_MIN_READ_RATE * 2,
+				min_rate_per_sec: CL_MIN_READ_RATE / 2,
 				max_parallel: 50,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
@@ -165,7 +169,7 @@ module.exports = function (logger) {
 				return req_cb();
 			}, (errs) => {												// all done!
 				if (errs) {
-					logger.error('[phase2] backup may not be complete. errors:');
+					logger.error('[phase 2] backup may not be complete. errors:');
 					logger.error(JSON.stringify(errs, null, 2));
 				}
 				return cb();
@@ -176,14 +180,15 @@ module.exports = function (logger) {
 		function handle_docs(response) {
 			const body = response ? response.body : null;
 			const api_id = response ? response.iter : 0;
-			const elapsed_ms = response ? response.elapsed_ms : 0;
+			const doc_elapsed_ms = response ? response.elapsed_ms : 0;
 			const docs = misc.parse_for_docs(body);
 
 			if (docs && docs.length > 0) {
 				finished_docs += docs.length;					// keep track of the number of docs we have finished
-				const percent = (finished_docs / doc_count * 100).toFixed(1) + '%';
-				logger.log('[rec] received resp for api:', api_id + ', # docs:', docs.length +
-					', took:', misc.friendly_ms(elapsed_ms) + ', total:', finished_docs, '[' + percent + ']');
+				const percent_docs = finished_docs / doc_count * 100;
+				logger.log('[rec] received resp for api:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
+					', total:', finished_docs, '[' + (percent_docs).toFixed(1) + '%]');
+				predict_time_left(percent_docs);
 
 				const write_okay = options.write_stream.write(JSON.stringify(docs) + '\n', 'utf8', write_flushed);
 				if (!write_okay) {								// the buffer is full, ALL STOP (wait for drain event)
@@ -194,6 +199,27 @@ module.exports = function (logger) {
 						});
 						//logger.log('[write] stalling couch reads b/c write stream is backed up');
 					}
+				}
+			}
+
+			// log much time is left
+			function predict_time_left(percent_docs) {
+				const job_elapsed_ms = Date.now() - start;
+				const estimated_total_ms = (percent_docs === 0) ? 0 : (1 / (percent_docs / 100) * job_elapsed_ms);
+				const time_left = estimated_total_ms - job_elapsed_ms;
+				logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left), confidence(percent_docs));
+			}
+
+			// how likely is the time estimate - more likely the longer we run
+			function confidence(per) {
+				if (per >= 80) {
+					return '(very high confidence)';
+				} else if (per >= 60) {
+					return '(high confidence)';
+				} else if (per >= 2) {
+					return '(low confidence)';
+				} else {
+					return '(no confidence)';
 				}
 			}
 
