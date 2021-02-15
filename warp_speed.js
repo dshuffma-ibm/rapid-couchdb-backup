@@ -33,10 +33,10 @@ module.exports = function (logger) {
 		const start = Date.now();
 		const couch = require('./libs/couchdb.js')(options.db_connection);
 		let finished_docs = 0;
-		let async_options = {};
+		let async_options = {};											// this needs to be at this scope so the write stream can pause it
 		let doc_count = 0;
 		let doc_stubs = [];
-		let db_errors = [];
+		const db_errors = [];
 		const DOC_STUB_BATCH_SIZE = 20000;								// pull doc stubs 20k at a time
 		const MAX_STUBS_IN_MEMORAY = 5e6;								// keep up to 5M doc stubs in memory (doc stubs are around 128 bytes each)
 		logger.log('backup preflight starting @', start);
@@ -64,14 +64,14 @@ module.exports = function (logger) {
 			// process a few million docs per loop
 			logger.log('\nstarting doc backup @', Date.now());
 			millions_doc_loop(data, () => {
-				if (finished_docs !== data.doc_count) {
+				if (finished_docs < data.doc_count) {
 					logger.error('[fin] missing docs... found:', finished_docs, 'db:', data.doc_count);
+					db_errors.push('warning - detected missing docs. found:' + finished_docs + ' db originally had:' + data.doc_count);
 				} else {
 					logger.log('[fin] the # of docs in backup matches the db:', finished_docs);
 				}
 
 				// phase 3 - walk changes since start
-				// dsh todo test phase 3!!
 				phase3(data, () => {
 					const d = new Date();
 					logger.log('[phase 3] complete.', misc.friendly_ms(Date.now() - start), '\n');
@@ -81,10 +81,11 @@ module.exports = function (logger) {
 						logger.log('[fin] backup errors:', db_errors.length);
 						logger.log('[fin]', d, '\n');
 
-						if (db_errors.length === 0) {
-							db_errors = null;
+						if (db_errors.length === 0) {							// all done
+							return cb(null, d);
+						} else {
+							return cb(db_errors, d);
 						}
-						return cb(db_errors, d);									// all done
 					});
 				});
 			});
@@ -128,7 +129,8 @@ module.exports = function (logger) {
 		// phase 1 - get doc stubs
 		function phase1(data, phase_cb) {
 			logger.log('[phase 1] starting...');
-			let received_doc_count = 0;
+			let the_last_doc_count = 0;
+			let prev_req_id = 0;
 			async_options = {
 				start: start,
 				count: calc_count(),											// calc the number of batch apis we will send
@@ -149,7 +151,11 @@ module.exports = function (logger) {
 				}
 			};
 			async_rl.async_reqs_limit(async_options, (resp, req_cb) => {
-				received_doc_count = handle_stubs(resp);
+				const docs_this_req = handle_stubs(resp);
+				if (resp && resp.iter >= prev_req_id) {					// the very last req tells us if we need to continue, store the # of docs it returned
+					prev_req_id = resp.iter;
+					the_last_doc_count = docs_this_req;
+				}
 				return req_cb();
 			}, (errs) => {														// all done!
 				if (errs) {
@@ -160,7 +166,7 @@ module.exports = function (logger) {
 					const elapsed = Date.now() - start;
 					logger.log('[phase 1] doc backup complete.', misc.friendly_ms(elapsed));
 				}
-				return phase_cb(null, received_doc_count);
+				return phase_cb(null, the_last_doc_count);
 			});
 
 			function calc_count() {

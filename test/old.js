@@ -7,18 +7,20 @@ const misc = require('../libs/misc.js')();
 
 
 // ------------------------------------------------
+// og large
 // [test runs] - 275MB - 581k docs (0 deleted docs - 0%) 500 batch size
 //    took: 6.0 minutes [370MB]
-//    took: 5.9 minutes [370MB]
+//    took: 5.9 minutes [370MB] (46MB/min)
 // [test runs] - 290MB - 295k docs (286k deleted docs - 49%) 500 batch size
 //    took: 6.2 minutes [244MB]
-//    took: 6.2 minutes [244MB]
+//    took: 6.2 minutes [244MB] (46MB/min)
 // [test runs] - 285MB - 144k docs (436k deleted docs - 75%) 500 batch size
 //    took: 5.9 minutes [177MB]
-//    took: 5.9 minutes [177MB]
-//!
+//    took: 5.9 minutes [177MB] (48MB/min)
+
+// ! large
 // [test runs] - 299MB - 629k docs (0 deleted docs - 0%) 500 batch size
-// spool length error - crash!
+//    spool length error - crash!
 //    took: 6.9 minutes [401MB]
 //    took: 6.8 minutes [401MB]
 

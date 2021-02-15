@@ -38,6 +38,19 @@ module.exports = function (logger) {
 		let http_errors = [];
 		let timer1, timer2;
 
+		// --------------------------------------------
+		// first setup a progress logger - do this first b/c w/o we may hit the launcher callback before the interval was created and then it won't be cleared
+		// --------------------------------------------
+		log_interval = setInterval(() => {
+			clean_up_records();
+			const elapsed_ms = Date.now() - start;
+			logger.log('- running for: ' + misc.friendly_ms(elapsed_ms) + ', stalled apis:', Object.keys(stalled_ids).length + ', pending apis:',
+				Object.keys(pending_ids).length + ', current rate:', Object.keys(ids).length + '/sec, max:', detected_max_rate_per_sec + '/sec');
+		}, 10 * 1000);
+
+		// --------------------------------------------
+		// go
+		// --------------------------------------------
 		const requests = [];											// build a dummy array, 1 per request we expect to do
 		for (let i = 1; i <= options.count; i++) {
 			requests.push(i);
@@ -55,16 +68,6 @@ module.exports = function (logger) {
 				return finish_cb(null);
 			}
 		});
-
-		// --------------------------------------------
-		// setup a progress logger
-		// --------------------------------------------
-		log_interval = setInterval(() => {
-			clean_up_records();
-			const elapsed_ms = Date.now() - start;
-			logger.log('- running for: ' + misc.friendly_ms(elapsed_ms) + ', stalled apis:', Object.keys(stalled_ids).length + ', pending apis:',
-				Object.keys(pending_ids).length + ', current rate:', Object.keys(ids).length + '/sec, max:', detected_max_rate_per_sec + '/sec');
-		}, 10 * 1000);
 
 		// --------------------------------------------
 		// spin up aysnc requests as fast as possible but backoff once a 429 is reached
