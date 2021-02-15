@@ -23,7 +23,7 @@ module.exports = function (logger) {
 		db_name: 'database',
 		batch_get_bytes_goal: 1 * 1024 * 1024,
 		write_stream: null,
-		max_rate_per_sec: 50,
+		max_rate_per_sec: 50,													// [optional]
 		max_parallel_globals: 10,												// [optional]
 		max_parallel_reads: 10,													// [optional]
 		head_room_percent: 20,													// [optional]
@@ -43,6 +43,7 @@ module.exports = function (logger) {
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
+		options.max_rate_per_sec = options.max_rate_per_sec || 50;			// default
 		options.min_rate_per_sec = options.min_rate_per_sec || 2;			// default
 		options.max_parallel_globals = options.max_parallel_globals || 10;	// default
 		options.max_parallel_reads = options.max_parallel_reads || 50;		// default
