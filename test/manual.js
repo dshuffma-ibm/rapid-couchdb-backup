@@ -14,7 +14,8 @@ const opts = {
 	db_connection: secrets.db_connection,
 	db_name: secrets.db_name,
 	max_rate_per_sec: MAX_RATE_PER_SEC,
-	max_parallel: MAX_PARALLEL,					// dsh too add field for phase1 and phase2
+	max_parallel_globals: MAX_PARALLEL,
+	max_parallel_reads: 50,
 	head_room_percent: HEAD_ROOM_PERCENT,
 	batch_get_bytes_goal: BATCH_GET_BYTES_GOAL,
 	write_stream: fs.createWriteStream('./_backup_docs.json'),
@@ -104,4 +105,5 @@ rapid_couchdb.backup(opts, (errors, date_completed) => {
 // [test runs] - 285MB - 144k docs (436k deleted docs - 75%) 2014 batch size
 //   1, 80, 50 -> took: 39.8 seconds [82MB]
 //   1, 80, 50 -> took: 40.9 seconds [82MB] (211k/min) (417MB/min) | {0.68min -> 8.68x}
+//   1, 80, 50 -> took: 39.8 seconds [82MB]
 // ------------------------------------------------

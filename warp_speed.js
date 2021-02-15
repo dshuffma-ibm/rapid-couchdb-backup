@@ -24,7 +24,8 @@ module.exports = function (logger) {
 		batch_get_bytes_goal: 1 * 1024 * 1024,
 		write_stream: null,
 		max_rate_per_sec: 50,
-		max_parallel: 10,														// [optional]
+		max_parallel_globals: 10,												// [optional]
+		max_parallel_reads: 10,													// [optional]
 		head_room_percent: 20,													// [optional]
 		min_rate_per_sec: 2,													// [optional]
 	}
@@ -33,33 +34,34 @@ module.exports = function (logger) {
 		const start = Date.now();
 		const couch = require('./libs/couchdb.js')(options.db_connection);
 		let finished_docs = 0;
-		let async_options = {};											// this needs to be at this scope so the write stream can pause it
+		let async_options = {};												// this needs to be at this scope so the write stream can pause it
 		let doc_count = 0;
 		let doc_stubs = [];
 		const db_errors = [];
-		const DOC_STUB_BATCH_SIZE = 20000;								// pull doc stubs 20k at a time
-		const MAX_STUBS_IN_MEMORAY = 5e6;								// keep up to 5M doc stubs in memory (doc stubs are around 128 bytes each)
+		const DOC_STUB_BATCH_SIZE = 20000;									// pull doc stubs 20k at a time
+		const MAX_STUBS_IN_MEMORAY = 5e6;									// keep up to 5M doc stubs in memory (doc stubs are around 128 bytes each)
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
-		options.min_rate_per_sec = options.min_rate_per_sec || 2;		// default
-		options.max_parallel = options.max_parallel || 10;				// default
-		options.head_room_percent = options.head_room_percent || 20;	// default
-		const input_errors = misc.check_inputs(options);				// check if there are any arg mistakes
+		options.min_rate_per_sec = options.min_rate_per_sec || 2;			// default
+		options.max_parallel_globals = options.max_parallel_globals || 10;	// default
+		options.max_parallel_reads = options.max_parallel_reads || 50;		// default
+		options.head_room_percent = options.head_room_percent || 20;		// default
+		const input_errors = misc.check_inputs(options);					// check if there are any arg mistakes
 		if (input_errors.length > 0) {
 			logger.error('input errors:\n', input_errors);
-			return cb({ input_errors });								// get the hell out of here
+			return cb({ input_errors });									// get the hell out of here
 		}
 
 		// go go gadget
-		get_db_data((internal_errors, data) => {						// get the sequence number and count the docs
+		get_db_data((internal_errors, data) => {							// get the sequence number and count the docs
 			if (internal_errors) {
 				logger.error('[stats] preflight errors:\n', internal_errors);
 				return cb({ internal_errors });
 			}
 
 			logger.log('[stats] backup preflight complete.');
-			doc_count = data.doc_count;									// hoist scope
+			doc_count = data.doc_count;										// hoist scope
 
 			// process a few million docs per loop
 			logger.log('\nstarting doc backup @', Date.now());
@@ -135,8 +137,8 @@ module.exports = function (logger) {
 				start: start,
 				count: calc_count(),											// calc the number of batch apis we will send
 				starting_rate_per_sec: 2,										// start low, this is a global query
-				max_rate_per_sec: options.max_rate_per_sec,
-				max_parallel: options.max_parallel,
+				max_rate_per_sec: options.max_rate_per_sec,						// its okay to go higher than the limit, it will find the limit
+				max_parallel: options.max_parallel_globals,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
 				request_opts_builder: (iter) => {								// build the options for each batch clouant api
@@ -186,9 +188,9 @@ module.exports = function (logger) {
 				start: start,
 				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_stubs.length / data.batch_size),	// calc the number of batch apis we will send
 				starting_rate_per_sec: Math.floor(CL_MIN_READ_RATE * ((100 - options.head_room_percent) / 100)),	// start high, this is a read query
-				max_rate_per_sec: CL_MIN_READ_RATE * 2,
+				max_rate_per_sec: CL_MIN_READ_RATE * 2,							// its okay to go higher than the limit, it will find the limit
 				min_rate_per_sec: CL_MIN_READ_RATE / 2,
-				max_parallel: 50,
+				max_parallel: options.max_parallel_reads,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
 				request_opts_builder: (iter) => {								// build the options for each batch clouant api

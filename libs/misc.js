@@ -132,8 +132,11 @@ module.exports = function () {
 		if (isNaN(opts.max_rate_per_sec)) {
 			errors.push('"max_rate_per_sec" must be a number');
 		}
-		if (isNaN(opts.max_parallel)) {
-			errors.push('"max_parallel" must be a number');
+		if (isNaN(opts.max_parallel_globals)) {
+			errors.push('"max_parallel_globals" must be a number');
+		}
+		if (isNaN(opts.max_parallel_reads)) {
+			errors.push('"max_parallel_reads" must be a number');
 		}
 		if (isNaN(opts.head_room_percent)) {
 			errors.push('"head_room_percent" must be a number');
