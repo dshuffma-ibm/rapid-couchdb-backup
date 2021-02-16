@@ -153,7 +153,7 @@ module.exports = function (logger) {
 					stalled_ids[id] = true;
 					return stall_api(id, end_stall_cb);						// postpone again - recurse
 				}
-			}, 100);
+			}, 125);
 		}
 
 		// see if we are at the rate limit or not
@@ -224,13 +224,14 @@ module.exports = function (logger) {
 			// --- Send the Request --- //
 			request(opts, (req_e, resp) => {
 				if (req_e) {																// detect timeout request error
-					logger.error('[' + opts._name + ' ' + opts._tx_id + '] unable to reach destination. error:', req_e);
 					resp = resp ? resp : {};												// init if not already present
 					resp.statusCode = resp.statusCode ? resp.statusCode : 500;				// init code if empty
 					resp.body = resp.body ? resp.body : req_e;								// copy requests error to resp if its empty
 					if (req_e.toString().indexOf('TIMEDOUT') >= 0) {
-						logger.error('[' + opts._name + ' ' + opts._tx_id + '] timeout exceeded:', opts.timeout);
+						logger.error('! [' + opts._name + ' ' + opts._tx_id + '] failed - timeout exceeded:', opts.timeout);
 						resp.statusCode = 408;
+					} else {
+						logger.error('! [' + opts._name + ' ' + opts._tx_id + '] failed - unable to reach destination. error:', req_e);
 					}
 				}
 

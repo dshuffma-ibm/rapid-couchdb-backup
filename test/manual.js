@@ -1,29 +1,28 @@
 
 const fs = require('fs');
 const rapid_couchdb = require('../warp_speed.js')(console);
-
-// ---------------------------------- Editable Settings  ---------------------------------- //
-const BATCH_GET_BYTES_GOAL = 1 * 1024 * 1024;			// MiB
-const MAX_RATE_PER_SEC = 10;							// the maximum number of api requests to send per second
-const MAX_PARALLEL = 30;								// this can be really high, ideally the rate limiter is controlling the load, not this field
-const HEAD_ROOM_PERCENT = 20;	 						// how much of the real rate limit should be left unused. (20% -> will use 80% of the rate limit)
 const secrets = require('../env/secrets.json');
-// ------------------------------------------------
 
 const opts = {
 	db_connection: secrets.db_connection,
 	db_name: secrets.db_name,
-	max_rate_per_sec: MAX_RATE_PER_SEC,
-	max_parallel_globals: MAX_PARALLEL,
+	max_rate_per_sec: 50,
+
+	// @ 12 i see phase1 reqs taking 2.7 minutes.. (1st round)
+	// @ 25 i see phase1 reqs taking over 6 minutes... (2nd round)
+	// @ 30 i see phase1 reqs taking 5.3 minutes.. (1st round) phase 1 took 32.1 minutes!
+	max_parallel_globals: 50,
+
 	max_parallel_reads: 50,
-	head_room_percent: HEAD_ROOM_PERCENT,
-	batch_get_bytes_goal: BATCH_GET_BYTES_GOAL,
+	head_room_percent: 20,
+	batch_get_bytes_goal: 1 * 1024 * 1024,
 	write_stream: fs.createWriteStream('./_backup_docs.json'),
 };
 rapid_couchdb.backup(opts, (errors, date_completed) => {
 	console.log('the end:', date_completed);
 	if (errors) {
-		console.error('looks like we had errors:', JSON.stringify(errors, null, 2));
+		console.error('looks like we had errors:', errors.length);
+		fs.writeFileSync('_backup_error.log', JSON.stringify(errors, null, 2));
 	}
 
 	//console.log(process._getActiveHandles());
@@ -106,4 +105,8 @@ rapid_couchdb.backup(opts, (errors, date_completed) => {
 //   1, 80, 50 -> took: 39.8 seconds [82MB]
 //   1, 80, 50 -> took: 40.9 seconds [82MB] (211k/min) (417MB/min) | {0.68min -> 8.68x}
 //   1, 80, 50 -> took: 39.8 seconds [82MB]
+
+// warp 2 - xlarge
+// [test runs] - 10.6GB - 22.7M docs (4 deleted docs - 0%) 2058 batch size
+//   1, 80, 50 -> took:  [MB]
 // ------------------------------------------------

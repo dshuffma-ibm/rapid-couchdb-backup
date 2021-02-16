@@ -28,6 +28,7 @@ module.exports = function (logger) {
 		max_parallel_reads: 10,													// [optional]
 		head_room_percent: 20,													// [optional]
 		min_rate_per_sec: 2,													// [optional]
+		// dsh todo add custom timeout setting
 	}
 	*/
 	exports.backup = (options, cb) => {
@@ -35,18 +36,20 @@ module.exports = function (logger) {
 		const couch = require('./libs/couchdb.js')(options.db_connection);
 		let finished_docs = 0;
 		let async_options = {};												// this needs to be at this scope so the write stream can pause it
-		let doc_count = 0;
+		let num_all_db_docs = 0;
 		let doc_stubs = [];
 		const db_errors = [];
-		const DOC_STUB_BATCH_SIZE = 20000;									// pull doc stubs 20k at a time
-		const MAX_STUBS_IN_MEMORY = 5e6;									// keep up to 5M doc stubs in memory (doc stubs are around 128 bytes each)
+		const DOC_STUB_BATCH_SIZE = 10000;									// pull doc stubs several thousand at a time (8,000 stubs = 1.05MB)
+		const MAX_STUBS_IN_MEMORY = 4e6;									// keep up to 4M doc stubs in memory (doc stubs are around 128 bytes each)
+		let high_ms = 0;
+		let metrics = [];
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
 		options.max_rate_per_sec = options.max_rate_per_sec || 50;			// default
 		options.min_rate_per_sec = options.min_rate_per_sec || 2;			// default
 		options.max_parallel_globals = options.max_parallel_globals || 10;	// default
-		options.max_parallel_reads = options.max_parallel_reads || 50;		// default
+		options.max_parallel_reads = options.max_parallel_reads || 20;		// default
 		options.head_room_percent = options.head_room_percent || 20;		// default
 		const input_errors = misc.check_inputs(options);					// check if there are any arg mistakes
 		if (input_errors.length > 0) {
@@ -62,7 +65,7 @@ module.exports = function (logger) {
 			}
 
 			logger.log('[stats] backup preflight complete.');
-			doc_count = data.doc_count;										// hoist scope
+			num_all_db_docs = data.doc_count;										// hoist scope
 
 			// process a few million docs per loop
 			logger.log('\nstarting doc backup @', Date.now());
@@ -78,10 +81,12 @@ module.exports = function (logger) {
 				phase3(data, () => {
 					const d = new Date();
 					logger.log('[phase 3] complete.', misc.friendly_ms(Date.now() - start), '\n');
+					metrics.push('finished phase 3 - ' + misc.friendly_ms(Date.now() - start));
 
 					prepare_for_death(() => {
 						logger.log('[fin] doc backup complete.', misc.friendly_ms(Date.now() - start));
 						logger.log('[fin] backup errors:', db_errors.length);
+						logger.log('[fin]', JSON.stringify(metrics, null, 2));
 						logger.log('[fin]', d, '\n');
 
 						if (db_errors.length === 0) {							// all done
@@ -99,15 +104,18 @@ module.exports = function (logger) {
 		function millions_doc_loop(data, million_cb) {
 			data._doc_id_iter = data._doc_id_iter || 1;								// init if needed
 			data._skip_offset = data._skip_offset || 0;								// init if needed
-			if (data._doc_id_iter * MAX_STUBS_IN_MEMORY >= 100e6) {				// don't recurse forever, at some point give up
+			if (data._doc_id_iter * MAX_STUBS_IN_MEMORY >= 100e6) {					// don't recurse forever, at some point give up
 				logger.log('[loop] recursed on doc stubs for too long. giving up.', data._doc_id_iter);
 				return million_cb();
 			}
+
+			logger.log('\n[metrics]', JSON.stringify(metrics, null, 2), '\n');
 
 			// pase 1 - get doc stubs
 			doc_stubs = [];															// reset per loop
 			phase1(data, (_, rec_doc_count) => {
 				logger.log('[phase 1] complete.', misc.friendly_ms(Date.now() - start), '\n');
+				metrics.push('finished phase 1-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start));
 
 				// phase 2 - get the docs
 				phase2(data, (errs) => {
@@ -115,6 +123,7 @@ module.exports = function (logger) {
 						logger.error('[fin] backup may not be complete. errors:');
 						logger.error(JSON.stringify(errs, null, 2));
 					}
+					metrics.push('finished phase 2-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start));
 
 					if (rec_doc_count > 0 && rec_doc_count === DOC_STUB_BATCH_SIZE) {	// if num of docs is the same as "limit" then there are more docs
 						logger.log('[phase 2] there are more docs to handle. going back to phase 1. loops:', data._doc_id_iter + '/' + data.loops, '\n');
@@ -134,6 +143,8 @@ module.exports = function (logger) {
 			logger.log('[phase 1] starting...');
 			let the_last_doc_count = 0;
 			let prev_req_id = 0;
+			high_ms = 0
+
 			async_options = {
 				start: start,
 				count: calc_count(),											// calc the number of batch apis we will send
@@ -147,8 +158,8 @@ module.exports = function (logger) {
 					return {
 						method: 'GET',
 						baseUrl: options.db_connection,
-						url: '/' + options.db_name + '/_all_docs?limit=' + DOC_STUB_BATCH_SIZE + '&skip=' + skip,
-						timeout: 2 * 60 * 1000,
+						url: '/' + options.db_name + '/_all_docs?stable=false&update=false&limit=' + DOC_STUB_BATCH_SIZE + '&skip=' + skip,
+						timeout: 8 * 60 * 1000,
 						_name: 'phase1',										// name to use in logs
 					};
 				}
@@ -185,6 +196,8 @@ module.exports = function (logger) {
 		function phase2(data, phase_cb) {
 			logger.log('[phase 2] starting...');
 			const CL_MIN_READ_RATE = 100;										// the reading rate of cloudant's cheapest plan
+			high_ms = 0
+
 			async_options = {
 				start: start,
 				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_stubs.length / data.batch_size),	// calc the number of batch apis we will send
@@ -205,7 +218,7 @@ module.exports = function (logger) {
 						headers: {
 							'Content-Type': 'application/json'
 						},
-						timeout: 2 * 60 * 1000,
+						timeout: 8 * 60 * 1000,
 						_name: 'phase2',										// name to use in logs
 					};
 				}
@@ -271,23 +284,26 @@ module.exports = function (logger) {
 			const doc_elapsed_ms = response ? response.elapsed_ms : 0;
 			const docs = misc.parse_for_docs(body);
 
-			if (docs && docs.length > 0) {
+			if (doc_elapsed_ms > high_ms) {
+				high_ms = doc_elapsed_ms;
+			}
+
+			if (body && body.error) {
+				db_errors.push(body);
+			} else if (docs && docs.length > 0) {
 				finished_docs += docs.length;					// keep track of the number of docs we have finished
-				const percent_docs = finished_docs / doc_count * 100;
+				const percent_docs = finished_docs / num_all_db_docs * 100;
 				logger.log('[rec] received resp for api:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
-					', total docs:', finished_docs, '[' + (percent_docs).toFixed(1) + '%]');
+					', total docs:', finished_docs + ', high:', misc.friendly_ms(high_ms), '[' + (percent_docs).toFixed(1) + '%]');
 				predict_time_left(percent_docs);
 				write_docs_2_stream(api_id, docs);
 			}
 		}
 
 		// log much time is left for all loops to complete
-		function predict_time_left(percent_docs) {
+		function predict_time_left(percent_all_db_docs_done) {
 			const job_elapsed_ms = Date.now() - start;
-
-			// if it will take more than 1 loop, multiple the estimate by the number of loops & some fraction of the last loop
-			const loop_multiplier = (doc_count < MAX_STUBS_IN_MEMORY) ? 1 : (doc_count / MAX_STUBS_IN_MEMORY);
-			const estimated_total_ms = (percent_docs === 0) ? 0 : (1 / (percent_docs / 100) * job_elapsed_ms * loop_multiplier);
+			const estimated_total_ms = (percent_all_db_docs_done === 0) ? 0 : (1 / (percent_all_db_docs_done / 100) * job_elapsed_ms);
 			const time_left = (estimated_total_ms - job_elapsed_ms);
 			logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left));
 		}
@@ -314,12 +330,21 @@ module.exports = function (logger) {
 		function handle_stubs(response) {
 			const body = response ? response.body : null;
 			const api_id = response ? response.iter : 0;
-			const elapsed_ms = response ? response.elapsed_ms : 0;
+			const doc_elapsed_ms = response ? response.elapsed_ms : 0;
 			const ids = misc.parse_for_stubs(body);
 
-			if (ids && ids.length > 0) {
-				logger.log('[rec] received resp for api:', api_id + ', # ids:', ids.length + ', took:', misc.friendly_ms(elapsed_ms));
-				doc_stubs = doc_stubs.concat(ids);
+			if (doc_elapsed_ms > high_ms) {
+				high_ms = doc_elapsed_ms;
+			}
+
+			if (body && body.error) {			// dsh todo for phase 2
+				db_errors.push(body);
+			} else {
+				if (ids && ids.length > 0) {
+					logger.log('[rec] received resp for api:', api_id + ', # ids:', ids.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
+						', high:', misc.friendly_ms(high_ms));
+					doc_stubs = doc_stubs.concat(ids);
+				}
 			}
 			return Array.isArray(ids) ? ids.length : 0;
 		}

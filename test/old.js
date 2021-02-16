@@ -56,14 +56,18 @@ const cle = cl.backup(
 		}
 	});
 
+
 cle.on('changes', (evt) => {
-	console.log('changes:', JSON.stringify(evt));
+	const elapsed = Date.now() - start;
+	console.log('changes:', JSON.stringify(evt), 'took', misc.friendly_ms(elapsed));
 });
 cle.on('written', (evt) => {
-	console.log('written:', JSON.stringify(evt));
+	const elapsed = Date.now() - start;
+	console.log('written:', JSON.stringify(evt), 'took', misc.friendly_ms(elapsed));
 });
 cle.on('finished', (evt) => {
-	console.log('finished:', JSON.stringify(evt));
+	const elapsed = Date.now() - start;
+	console.log('finished:', JSON.stringify(evt), 'took', misc.friendly_ms(elapsed));
 });
 cle.on('error', (evt) => {
 	console.error('error:', JSON.stringify(evt));
