@@ -46,7 +46,7 @@ module.exports = function (logger) {
 		let high_ms = 0;
 		let metrics = [];
 		let last_sequence = 0;
-		let stubs_this_loop = 0;
+		let changes_this_loop = 0;
 		let pending_sequences = '-';
 		logger.log('backup preflight starting @', start);
 
@@ -69,23 +69,25 @@ module.exports = function (logger) {
 			}
 
 			logger.log('[stats] backup preflight complete.');
-			num_all_db_docs = data.doc_count;										// hoist scope
+			num_all_db_docs = data.doc_count;								// hoist scope
 
 			// process a few million docs per loop
 			logger.log('\nstarting doc backup @', Date.now());
 			millions_doc_loop(data, () => {
-				if (finished_docs < data.doc_count) {
-					logger.error('[fin] missing docs... found:', finished_docs, 'db:', data.doc_count);
-					db_errors.push('warning - detected missing docs. found:' + finished_docs + ' db originally had:' + data.doc_count);
-				} else {
-					logger.log('[fin] the # of docs in backup matches the db:', finished_docs);
-				}
 
 				// phase 3 - walk changes since start
+				data.seq = last_sequence || data.seq;
 				phase3(data, () => {
 					const d = new Date();
 					logger.log('[phase 3] complete.', misc.friendly_ms(Date.now() - start), '\n');
 					metrics.push('finished phase 3 - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
+
+					if (finished_docs < data.doc_count) {
+						logger.error('[fin] missing docs... found:', finished_docs, 'db:', data.doc_count);
+						db_errors.push('warning - detected missing docs. found:' + finished_docs + ' db originally had:' + data.doc_count);
+					} else {
+						logger.log('[fin] the # of finished docs is good. found:', finished_docs, 'db:', data.doc_count);
+					}
 
 					prepare_for_death(() => {
 						logger.log('[fin] doc backup complete.', misc.friendly_ms(Date.now() - start));
@@ -112,18 +114,19 @@ module.exports = function (logger) {
 				logger.log('[loop] recursed on doc stubs for too long. giving up.', data._doc_id_iter);
 				return million_cb();
 			}
+			logger.log('\n[loop -', data._doc_id_iter + ']');
 
 			// pase 1 - get doc stubs
 			doc_stubs = [];															// reset per loop
-			stubs_this_loop = 0;
+			changes_this_loop = 0;
 			phase1(data, (p1_err, ret) => {
 				if (p1_err) {
 					// already logged
 					return million_cb(p1_err);
 				}
 
-				logger.log('[phase 1] complete. docs this loop:', stubs_this_loop, misc.friendly_ms(Date.now() - start), '\n');
-				metrics.push('finished phase 1-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
+				logger.log('[phase 1] complete. active stubs this loop:', doc_stubs.length, 'elapsed:', misc.friendly_ms(Date.now() - start));
+				metrics.push('finished L' + data._doc_id_iter + ' phase 1 - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
 				// phase 2 - get the docs & write each to stream
 				phase2(data, (errs) => {
@@ -131,18 +134,19 @@ module.exports = function (logger) {
 						logger.error('[fin] backup may not be complete. errors:');
 						logger.error(JSON.stringify(errs, null, 2));
 					}
-					metrics.push('finished phase 2-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
+					metrics.push('finished L' + data._doc_id_iter + ' phase 2 - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
-					logger.log('docs this loop:', stubs_this_loop, 'total:', finished_docs);
-					if (stubs_this_loop > 0 && doc_stubs.length === MAX_STUBS_IN_MEMORY) {	// if num of docs is the same as "limit" then there are more docs
-						logger.log('[phase 2] there are more docs to handle. going back to phase 1. loops:', data._doc_id_iter + '/' + data.loops, '\n');
+					logger.log('[loop -', data._doc_id_iter + '] active stubs this loop:', doc_stubs.length, 'total:', finished_docs,
+						'pending_sequences:', pending_sequences, 'changes_this_loop:', changes_this_loop);
+					if (pending_sequences > 0) {									// if there are more pending changes then there are more docs to get
+						logger.log('[phase 2] more docs to handle. going back to phase 1. completed loops:', data._doc_id_iter + '/' + data.loops);
+						logger.log('[loop -', data._doc_id_iter + ']', JSON.stringify(metrics, null, 2));
 						data._skip_offset += MAX_STUBS_IN_MEMORY;
-						data._doc_id_iter++;
 						data._since = last_sequence;
-						logger.log('[metrics]', JSON.stringify(metrics, null, 2));
+						data._doc_id_iter++;
 						return millions_doc_loop(data, million_cb);					// recurse
 					} else {
-						logger.log('[phase 2] complete.', misc.friendly_ms(Date.now() - start), 'loops:', data._doc_id_iter + '/' + data.loops, '\n');
+						logger.log('[phase 2] complete.', misc.friendly_ms(Date.now() - start), 'completed loops:', data._doc_id_iter + '/' + data.loops);
 						return million_cb(errs);									// all done
 					}
 				});
@@ -255,12 +259,13 @@ module.exports = function (logger) {
 				}
 
 				if (body.results.length === 0) {
-					logger.log('[phase 3] no changes since backup start.');
+					logger.log('[phase 3] 0 changes since backup start.');
 					return phase_cb();
 				} else {
 					const docs = misc.parse_for_docs_changes(body);
 					logger.log('[phase 3] parsing changes since backup start.', docs.length);
-					write_docs_2_stream('-', docs);
+					finished_docs += docs.length;
+					write_docs_2_stream(data._changes_iter, docs);
 
 					if (docs.length !== data.batch_size) {
 						logger.log('[phase 3] all changes since backup start are processed.');
@@ -326,18 +331,22 @@ module.exports = function (logger) {
 		// handle each change feed entry
 		function handle_change_entry(doc_change) {
 			if (doc_change && doc_change.last_seq) {
-				logger.log('[phase1] found the last sequence in change feed');			// we need this for the next loop if applicable
+				logger.log('[phase1] found the last sequence in change feed', doc_change.last_seq.substring(0, 16));	// need this for next loop
 				last_sequence = doc_change.last_seq;
 			}
-			if (doc_change && doc_change.pending) {
+			if (doc_change && !isNaN(doc_change.pending)) {
+				logger.log('[phase1] found the pending changes field in change feed:', doc_change.pending, 'changes_this_loop:', changes_this_loop);
 				pending_sequences = doc_change.pending;									// the sequences left doesn't appear in each entry, only the last
+			}
+
+			if (doc_change && doc_change.changes) {
+				changes_this_loop++;
 			}
 
 			if (doc_change && doc_change.changes && !doc_change.deleted) {				// always skip deleted docs
 				try {
 					const last = doc_change.changes.length - 1;
 					doc_stubs.push({ id: doc_change.id, rev: doc_change.changes[last].rev });
-					stubs_this_loop++;
 				} catch (e) { }
 
 				if (doc_stubs.length % 10000 === 0) {									// print the status every so often
@@ -384,7 +393,7 @@ module.exports = function (logger) {
 					const doc_count = resp1.doc_count;
 					const del_count = resp1.doc_del_count;
 					const seq = resp[1].last_seq;
-					const loops = Math.ceil(doc_count / MAX_STUBS_IN_MEMORY);
+					const loops = Math.ceil((doc_count + del_count) / MAX_STUBS_IN_MEMORY);			// phase1 loops over deleted and active docs
 					logger.log('[stats] size:', misc.friendly_bytes(resp1.sizes.external));
 					logger.log('[stats] docs:', misc.friendly_number(doc_count));
 					logger.log('[stats] avg doc:', misc.friendly_bytes(avg_doc_bytes));
