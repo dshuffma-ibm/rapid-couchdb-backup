@@ -23,7 +23,7 @@
 	"cSpell.dictionaryDefinitions": [
 		{
 			"name": "blockchainTerms",
-			"path": "./dictionary_blockchain.txt"
+			"path": "./dictionary.txt"
 		}
 	],
 	"cSpell.dictionaries": [

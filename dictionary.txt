@@ -254,4 +254,5 @@ chainfile
 couchbackups
 ussouth
 cloudant
+couchbackup's
 recursed

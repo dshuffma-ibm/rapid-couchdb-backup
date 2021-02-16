@@ -109,6 +109,23 @@ module.exports = function () {
 		}
 		return ret;
 	};
+
+	// ------------------------------------------------------
+	// Pull each doc stub field out of the changes response
+	// ------------------------------------------------------
+	exports.parse_for_doc_stubs_changes = (body) => {
+		let ret = [];
+		if (body && body.results) {
+			for (let i in body.results) {
+				if (body.results[i]) {
+					const last = body.results[i].changes.length - 1;
+					ret.push({ id: body.results[i].id, rev: body.results[i].changes[last] });
+				}
+			}
+		}
+		return ret;
+	};
+
 	// ------------------------------------------------------
 	// Pull each doc id out of the response
 	// ------------------------------------------------------

@@ -13,6 +13,8 @@ module.exports = function (logger) {
 	const async = require('async');
 	const misc = require('./libs/misc.js')();
 	const async_rl = require('./libs/async_rate.js')(logger);
+	const change = require('./libs/change.js');
+	const liner = require('./libs/liner.js');
 
 	//------------------------------------------------------------
 	// Backup a CouchDB database (this is the only exposed function in the lib)
@@ -39,10 +41,13 @@ module.exports = function (logger) {
 		let num_all_db_docs = 0;
 		let doc_stubs = [];
 		const db_errors = [];
-		const DOC_STUB_BATCH_SIZE = 10000;									// pull doc stubs several thousand at a time (8,000 stubs = 1.05MB)
+		//const DOC_STUB_BATCH_SIZE = 10000;								// pull doc stubs several thousand at a time (8,000 stubs = 1.05MB)
 		const MAX_STUBS_IN_MEMORY = 4e6;									// keep up to 4M doc stubs in memory (doc stubs are around 128 bytes each)
 		let high_ms = 0;
 		let metrics = [];
+		let last_sequence = 0;
+		let stubs_this_loop = 0;
+		let pending_seq = 0;
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
@@ -81,7 +86,7 @@ module.exports = function (logger) {
 				phase3(data, () => {
 					const d = new Date();
 					logger.log('[phase 3] complete.', misc.friendly_ms(Date.now() - start), '\n');
-					metrics.push('finished phase 3 - ' + misc.friendly_ms(Date.now() - start));
+					metrics.push('finished phase 3 - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
 					prepare_for_death(() => {
 						logger.log('[fin] doc backup complete.', misc.friendly_ms(Date.now() - start));
@@ -89,7 +94,7 @@ module.exports = function (logger) {
 						logger.log('[fin]', JSON.stringify(metrics, null, 2));
 						logger.log('[fin]', d, '\n');
 
-						if (db_errors.length === 0) {							// all done
+						if (db_errors.length === 0) {								// all done
 							return cb(null, d);
 						} else {
 							return cb(db_errors, d);
@@ -99,7 +104,7 @@ module.exports = function (logger) {
 			});
 		});
 
-		// repeat phase 1 and 2 until all docs are backed up. will do DOC_STUB_BATCH_SIZE doc-stubs per loop. - RECURSIVE
+		// repeat phase 1 and 2 until all docs are backed up. will do MAX_STUBS_IN_MEMORY doc-stubs per loop. - RECURSIVE
 		// i'm doing this loop to limit the size of the doc stubs we keep in memory.
 		function millions_doc_loop(data, million_cb) {
 			data._doc_id_iter = data._doc_id_iter || 1;								// init if needed
@@ -109,13 +114,12 @@ module.exports = function (logger) {
 				return million_cb();
 			}
 
-			logger.log('\n[metrics]', JSON.stringify(metrics, null, 2), '\n');
-
 			// pase 1 - get doc stubs
 			doc_stubs = [];															// reset per loop
-			phase1(data, (_, rec_doc_count) => {
-				logger.log('[phase 1] complete.', misc.friendly_ms(Date.now() - start), '\n');
-				metrics.push('finished phase 1-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start));
+			stubs_this_loop = 0;
+			phase1(data, (_, ret) => {
+				logger.log('[phase 1] complete. docs this loop:', stubs_this_loop, misc.friendly_ms(Date.now() - start), '\n');
+				metrics.push('finished phase 1-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
 				// phase 2 - get the docs
 				phase2(data, (errs) => {
@@ -123,12 +127,15 @@ module.exports = function (logger) {
 						logger.error('[fin] backup may not be complete. errors:');
 						logger.error(JSON.stringify(errs, null, 2));
 					}
-					metrics.push('finished phase 2-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start));
+					metrics.push('finished phase 2-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
-					if (rec_doc_count > 0 && rec_doc_count === DOC_STUB_BATCH_SIZE) {	// if num of docs is the same as "limit" then there are more docs
+					logger.log('docs this loop:', stubs_this_loop, 'total:', finished_docs);
+					if (stubs_this_loop > 0 && doc_stubs.length === MAX_STUBS_IN_MEMORY) {	// if num of docs is the same as "limit" then there are more docs
 						logger.log('[phase 2] there are more docs to handle. going back to phase 1. loops:', data._doc_id_iter + '/' + data.loops, '\n');
 						data._skip_offset += MAX_STUBS_IN_MEMORY;
 						data._doc_id_iter++;
+						data._since = last_sequence;
+						logger.log('[metrics]', JSON.stringify(metrics, null, 2));
 						return millions_doc_loop(data, million_cb);					// recurse
 					} else {
 						logger.log('[phase 2] complete.', misc.friendly_ms(Date.now() - start), 'loops:', data._doc_id_iter + '/' + data.loops, '\n');
@@ -141,55 +148,15 @@ module.exports = function (logger) {
 		// phase 1 - get doc stubs
 		function phase1(data, phase_cb) {
 			logger.log('[phase 1] starting...');
-			let the_last_doc_count = 0;
-			let prev_req_id = 0;
-			high_ms = 0
+			data._since = data._since || 0;
+			logger.log('[phase 1] starting since sequence:', data._since);
 
-			async_options = {
-				start: start,
-				count: calc_count(),											// calc the number of batch apis we will send
-				starting_rate_per_sec: 2,										// start low, this is a global query
-				max_rate_per_sec: options.max_rate_per_sec,						// its okay to go higher than the limit, it will find the limit
-				max_parallel: options.max_parallel_globals,
-				head_room_percent: options.head_room_percent,
-				_pause: false,
-				request_opts_builder: (iter) => {								// build the options for each batch couchdb api
-					const skip = (iter - 1) * DOC_STUB_BATCH_SIZE + data._skip_offset;
-					return {
-						method: 'GET',
-						baseUrl: options.db_connection,
-						url: '/' + options.db_name + '/_all_docs?stable=false&update=false&limit=' + DOC_STUB_BATCH_SIZE + '&skip=' + skip,
-						timeout: 8 * 60 * 1000,
-						_name: 'phase1',										// name to use in logs
-					};
-				}
-			};
-			async_rl.async_reqs_limit(async_options, (resp, req_cb) => {
-				const docs_this_req = handle_stubs(resp);
-				if (resp && resp.iter >= prev_req_id) {					// the very last req tells us if we need to continue, store the # of docs it returned
-					prev_req_id = resp.iter;
-					the_last_doc_count = docs_this_req;
-				}
-				return req_cb();
-			}, (errs) => {														// all done!
-				if (errs) {
-					logger.error('[phase 1] backup may not be complete. errors:');
-					logger.error(JSON.stringify(errs, null, 2));
-					db_errors.push(errs);
-				} else {
-					const elapsed = Date.now() - start;
-					logger.log('[phase 1] doc backup complete.', misc.friendly_ms(elapsed));
-				}
-				return phase_cb(null, the_last_doc_count);
+			const db = require('nano')({ url: options.db_connection + '/' + options.db_name });
+			const s = db.changesAsStream({ seq_interval: MAX_STUBS_IN_MEMORY, limit: MAX_STUBS_IN_MEMORY, since: data._since });
+			s.on('end', () => {
+				return phase_cb(null);
 			});
-
-			function calc_count() {
-				if (data.doc_count < MAX_STUBS_IN_MEMORY) {
-					return Math.ceil(data.doc_count / DOC_STUB_BATCH_SIZE);
-				} else {
-					return Math.ceil(MAX_STUBS_IN_MEMORY / DOC_STUB_BATCH_SIZE);
-				}
-			}
+			s.pipe(liner()).pipe(change(handle_change));
 		}
 
 		// phase 2 - get the docs
@@ -327,26 +294,24 @@ module.exports = function (logger) {
 		}
 
 		// handle the doc ids in the couchdb responses - returns number of docs in couchdb response
-		function handle_stubs(response) {
-			const body = response ? response.body : null;
-			const api_id = response ? response.iter : 0;
-			const doc_elapsed_ms = response ? response.elapsed_ms : 0;
-			const ids = misc.parse_for_stubs(body);
-
-			if (doc_elapsed_ms > high_ms) {
-				high_ms = doc_elapsed_ms;
+		function handle_change(doc_change) {
+			if (doc_change && doc_change.last_seq) {
+				logger.log('[phase1] found the last sequence');
+				last_sequence = doc_change.last_seq;
+			}
+			if (doc_change && doc_change.pending) {
+				pending_seq = doc_change.pending;
 			}
 
-			if (body && body.error) {			// dsh todo for phase 2
-				db_errors.push(body);
-			} else {
-				if (ids && ids.length > 0) {
-					logger.log('[rec] received resp for api:', api_id + ', # ids:', ids.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
-						', high:', misc.friendly_ms(high_ms));
-					doc_stubs = doc_stubs.concat(ids);
+			if (doc_change && doc_change.changes && !doc_change.deleted) {				// always skip deleted docs
+				const last = doc_change.changes.length - 1;
+				doc_stubs.push({ id: doc_change.id, rev: doc_change.changes[last].rev });
+				stubs_this_loop++;
+
+				if (doc_stubs.length % 10000 === 0) {
+					logger.log('[rec] received changes, stubs:', doc_stubs.length + ', took:', misc.friendly_ms(Date.now() - start) + ', pending:', pending_seq);
 				}
 			}
-			return Array.isArray(ids) ? ids.length : 0;
 		}
 
 		// ------------------------------------------------------

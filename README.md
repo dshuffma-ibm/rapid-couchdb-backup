@@ -18,16 +18,14 @@ These settings should prevent the backup from overwhelming couchdb!
 This couchdb backup lib will be much faster than [@cloudant/couchbackup](https://github.com/cloudant/couchbackup) **if the database has a high deleted doc percentage.**
 Otherwise it is only a little faster on large databases and its actually slower on very small databases.
 
-| Backup Test | Rapid Backup      | Cloudant CouchBackup | Speed Up |
+| Backup Test | Rapid Backup | Cloudant CouchBackup | Speed Up |
 | ----------- | ----------- | ----------- | ----------- |
-| XLarge - 0% deleted    | 15.1 hrs       | 16.7 hrs       | 1.1x
-| XLarge - 50% deleted   | 2.7 hrs        | 16.5 hrs       | 6.1x
-| XLarge - 75% deleted   | 34.5 mins      | 16.9 hrs       | 29.4x
-| Large - 0% deleted     | 4.4 mins       | 6.0 mins       | 1.7x
-| Large - 50% deleted    | 2.7 mins       | 6.2 mins       | 2.3x
-| Large - 75% deleted    | 39.8 secs      | 5.9 mins       | 8.9x
-| Small - 0% deleted     | 4.0 secs       | 2.4 secs       | 0.6x (slower)
-| Small - 50% deleted    | 2.5 secs       | 2.4 secs       | 0.9x (slower)
+| XLarge - 0% deleted    | 1.6 hrs        | 3.2 hrs       | 2.0x
+| XLarge - 75% deleted   | 34.5 mins      | 3.2 hrs       | 5.6x
+| Large - 0% deleted     | 2.7 mins       | 6.0 mins      | 2.2x
+| Large - 75% deleted    | 47.7 secs      | 5.9 mins      | 7.4x
+| Small - 0% deleted     | 4.0 secs       | 2.4 secs      | 0.6x (slower)
+| Small - 75% deleted    | 2.5 secs       | 2.4 secs      | 0.9x (slower)
 
 - XLarge - 22M docs, total size 10GB
 - Large - 581k docs, total size 275MB
@@ -70,8 +68,8 @@ const opts = {
 	max_parallel_globals: 8,
 
 	// [optional] the maximum number of read queries to be waiting on.
-	// defaults 50
-	max_parallel_reads: 40,
+	// defaults 20
+	max_parallel_reads: 30,
 
 	// [optional] how much of the real rate limit should be left for other applications.
 	// example if 20 is set then only 80% of the detected-rate limit will be used.
@@ -94,31 +92,30 @@ rapid_couchdb.backup(opts, (errors, date_completed) => {
 ```
 
 ## How it Works
-The issue with the other backup tools are that they use the `_changes` feed.
-That feed performs poorly if you have a ton of deleted docs.
-Because each delete entry is still in the `_changes` feed.
+The issue with the other backup tools are that they backup the delete history from the `_changes` feed.
+That leads to poor performance if you have a ton of deleted docs.
 
 The other backup tools will take longer and longer as your applications create and delete docs.
 Each delete is still something it will process, so the time for a complete backup will actually grow indefinitely!
 After years you could be spending hours and days processing deleted docs...
 
-The number of deleted docs is irrelevant to this lib.
-The main variable driving how long a backup will take is the number docs that are not deleted.
+The number of deleted docs is mostly irrelevant to this lib.
+The main variable driving how long a backup will take is the number of docs that are not deleted.
 
-This lib does not use the `_changes` feed until the backup is nearly done.
-In `phase1` the backup will grab the list of doc ids in the database.
+In `phase1` the backup will walk the `_changes` feed and ignore delete entries.
 It will keep up to X doc ids in memory at a time.
 In `phase2` it will send bulk/batch GET doc apis to receive as many docs as the settings allow.
-It will then repeat `phase1` and `phase2` until all docs are read.
+As the docs come in they will be written to the output stream.
+It will then repeat `phase1` and `phase2` until all docs are backed up.
 Once its done with that it needs to find if any docs were added/edited since the backup started.
 `phase3` will walk the `_changes` feed starting the feed from the start of the backup.
 
 ## Limitations
 - Docs that were deleted _during_ the backup will appear in the beginning of the backup. However they will be followed by their delete stub at the end of the backup data.
 - Docs that were edited _during_ the backup will appear twice in the backup data. The latest version is the one towards the end of backup.
-- Will only back up active docs. Meaning the deleted doc history is not part of the backup (with the except when the delete happened _during_ the backup process).
+- Will only back up active docs. Meaning the deleted doc history is not part of the backup (with the exception of when a delete happens _during_ the backup process).
 - Does not store doc `meta` data such as previous revision tokens.
-- Does not back up attachments (this was done to preserve compatibility with @cloudant/couchbackup's restore function).
+- Does not back up attachments (this was chosen to preserve compatibility with @cloudant/couchbackup's restore function).
 
 ## Backup Structure
 Same output as [@cloudant/couchbackup](https://github.com/cloudant/couchbackup#whats-in-a-backup-file).
