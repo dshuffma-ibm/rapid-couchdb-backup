@@ -1,6 +1,7 @@
 # rapid-couchdb-backup
 
-A couchdb backup tool focusing on **speed** and **rate limit controls**.
+A couchdb database backup tool focusing on **speed** and **rate limit controls**.
+Will backup active docs in a couchdb database to a [node stream](https://nodejs.org/api/stream.html) (which could be a file or something else).
 
 ## Rate Limit Controls
 
@@ -14,10 +15,10 @@ These settings should prevent the backup from overwhelming couchdb!
 
 ## Speed
 
-This coucdb backup lib will be much faster than [@cloudant/couchbackup](https://github.com/cloudant/couchbackup) **if the database has a high deleted doc percentage.**
+This couchdb backup lib will be much faster than [@cloudant/couchbackup](https://github.com/cloudant/couchbackup) **if the database has a high deleted doc percentage.**
 Otherwise it is only a little faster on large databases and its actually slower on very small databases.
 
-| Test | Rapid CouchDbBackup      | Cloudant CouchDbBackup | Speed Up |
+| Backup Test | Rapid Backup      | Cloudant CouchBackup | Speed Up |
 | ----------- | ----------- | ----------- | ----------- |
 | XLarge - 0% deleted    | 15.1 hrs       | 16.7 hrs       | 1.1x
 | XLarge - 50% deleted   | 2.7 hrs        | 16.5 hrs       | 6.1x
@@ -33,12 +34,14 @@ Otherwise it is only a little faster on large databases and its actually slower 
 - Small - 2k docs, total size 4MB
 
 
-# Usage
+## Usage
 
 ```js
-// to enable detailed logs pass a loger or the console to the lib
+// to enable detailed logs pass a loger or the console to the lib,
+// else logging is disabled
 const rapid_couchdb = require('../warp_speed.js')(console);
 
+// all options are shown below:
 const opts = {
 	// [required] the database connection url, including basic auth and port if applicable
 	db_connection: 'https://auth:password@url.com:443',
@@ -103,9 +106,21 @@ It will then repeat `phase1` and `phase2` until all docs are read.
 Once its done with that it needs to find if any docs were added/edited since the backup started.
 `phase3` will walk the `_changes` feed starting the feed from the start of the backup.
 
-### Limitations:
-- Docs that were deleted during the backup will appear in the backup.
-- Docs that were edited during the backup will appear twice in the backup. The latest version is the one towards the end of backup.
+## Limitations
+- Docs that were deleted _during_ the backup will appear in the begining of the backup. However they will be followed by their delete stub at the end of the backup data.
+- Docs that were edited _during_ the backup will appear twice in the backup data. The latest version is the one towards the end of backup.
+- Will only back up active docs. Meaning the deleted doc history is not part of the backup (with the except when the delete happened _during_ the backup process).
+- Does not store doc `meta` data such as previous revision tokens.
+- Does not back up attachements (this was done to preserve compabilty with @cloudant/couchbackup's restore function).
+
+## Backup Structure
+Same output as [@cloudant/couchbackup](https://github.com/cloudant/couchbackup#whats-in-a-backup-file).
+It's a bunch of naked arrays with doc JSON objects separated by newlines.
+
+```js
+[{"_id":"1","_rev":"1-1","d":1},{"_id":"2","_rev":"2-2","d":2}...]
+[{"_id":"3","_rev":"3-3","d":3},{"_id":"4","_rev":"4-4","d":4}...]
+```
 
 ## How to Restore
 The output format of this backup is compatble with [@cloudant/couchbackup](https://github.com/cloudant/couchbackup).
