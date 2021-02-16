@@ -19,5 +19,7 @@
 		"axios": "^0.21.1",
 		"request": "2.88.*"
 	},
-	"devDependencies": {}
+	"devDependencies": {
+		"eslint": "^7.20.0"
+	}
 }

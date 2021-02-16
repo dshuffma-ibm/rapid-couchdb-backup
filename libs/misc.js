@@ -40,7 +40,7 @@ module.exports = function () {
 		else if (ms > 60 * 60 * 1000) { ret = (ms / 1000 / 60 / 60).toFixed(1) + ' hrs'; }	//format for hours
 		else if (ms > 60 * 1000) { ret = (ms / 1000 / 60).toFixed(1) + ' mins'; }			//format for mins
 		else if (ms > 1000) { ret = (ms / 1000).toFixed(1) + ' secs'; }						//format for secs
-		else { ret = ms.toFixed(1) + ' ms'; }												//format to ms
+		else { ret = ms.toFixed(0) + ' ms'; }												//format to ms
 		return ret;
 	};
 

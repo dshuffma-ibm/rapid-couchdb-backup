@@ -15,8 +15,8 @@ module.exports = function (logger) {
 	const axios = require('axios').default;
 	const misc = require('./libs/misc.js')();
 	const async_rl = require('./libs/async_rate.js')(logger);
-	const change = require('./libs/change.js');
-	const liner = require('./libs/liner.js');
+	const changes = require('./libs/changes.js');
+	const break_lines = require('./libs/break-lines.js');
 
 	//------------------------------------------------------------
 	// Backup a CouchDB database (this is the only exposed function in the lib)
@@ -47,7 +47,7 @@ module.exports = function (logger) {
 		let metrics = [];
 		let last_sequence = 0;
 		let stubs_this_loop = 0;
-		let pending_seq = 0;
+		let pending_sequences = '-';
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
@@ -125,7 +125,7 @@ module.exports = function (logger) {
 				logger.log('[phase 1] complete. docs this loop:', stubs_this_loop, misc.friendly_ms(Date.now() - start), '\n');
 				metrics.push('finished phase 1-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
-				// phase 2 - get the docs
+				// phase 2 - get the docs & write each to stream
 				phase2(data, (errs) => {
 					if (errs) {
 						logger.error('[fin] backup may not be complete. errors:');
@@ -165,10 +165,10 @@ module.exports = function (logger) {
 			};
 			const s = new stream.PassThrough();
 			axios(req).then((response) => {
-				response.data.pipe(s)
+				response.data.pipe(s);
 			}).catch(response => {
 				if (response.isAxiosError && response.response) {
-					response = response.response
+					response = response.response;
 				}
 				const message = response.statusText;
 				const error = new Error(message);
@@ -184,16 +184,16 @@ module.exports = function (logger) {
 				logger.error('[phase 1] unable to read _changes feed. error:');
 				logger.error(JSON.stringify(err, null, 2));
 				db_errors.push(err);
-				return phase_cb(err);		// will end be called too?
-			})
-			s.pipe(liner()).pipe(change(handle_change));
+				return phase_cb(err);
+			});
+			s.pipe(break_lines()).pipe(changes(handle_change_entry));
 		}
 
-		// phase 2 - get the docs
+		// phase 2 - get the docs & write to stream
 		function phase2(data, phase_cb) {
 			logger.log('[phase 2] starting...');
 			const CL_MIN_READ_RATE = 100;										// the reading rate of cloudant's cheapest plan
-			high_ms = 0
+			high_ms = 0;
 
 			async_options = {
 				start: start,
@@ -245,7 +245,7 @@ module.exports = function (logger) {
 
 			const opts = {
 				db_name: options.db_name,
-				query: '&since=' + data.seq + '&include_docs=true&limit=' + data.batch_size
+				query: '&since=' + data.seq + '&include_docs=true&limit=' + data.batch_size + '&seq_interval=' + data.batch_size
 			};
 			couch.get_changes(opts, (err, body) => {							// get the changes feed
 				if (err || !body.results) {
@@ -291,7 +291,7 @@ module.exports = function (logger) {
 				finished_docs += docs.length;					// keep track of the number of docs we have finished
 				const percent_docs = finished_docs / num_all_db_docs * 100;
 				logger.log('[rec] received resp for api:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
-					', total docs:', finished_docs + ', high:', misc.friendly_ms(high_ms), '[' + (percent_docs).toFixed(1) + '%]');
+					', high:', misc.friendly_ms(high_ms) + ', fin docs:', misc.friendly_number(finished_docs), '[' + (percent_docs).toFixed(1) + '%]');
 				predict_time_left(percent_docs);
 				write_docs_2_stream(api_id, docs);
 			}
@@ -324,13 +324,13 @@ module.exports = function (logger) {
 		}
 
 		// handle each change feed entry
-		function handle_change(doc_change) {
+		function handle_change_entry(doc_change) {
 			if (doc_change && doc_change.last_seq) {
-				logger.log('[phase1] found the last sequence');
+				logger.log('[phase1] found the last sequence in change feed');			// we need this for the next loop if applicable
 				last_sequence = doc_change.last_seq;
 			}
 			if (doc_change && doc_change.pending) {
-				pending_seq = doc_change.pending;
+				pending_sequences = doc_change.pending;									// the sequences left doesn't appear in each entry, only the last
 			}
 
 			if (doc_change && doc_change.changes && !doc_change.deleted) {				// always skip deleted docs
@@ -340,8 +340,9 @@ module.exports = function (logger) {
 					stubs_this_loop++;
 				} catch (e) { }
 
-				if (doc_stubs.length % 10000 === 0) {
-					logger.log('[rec] received changes, stubs:', doc_stubs.length + ', took:', misc.friendly_ms(Date.now() - start) + ', pending:', pending_seq);
+				if (doc_stubs.length % 10000 === 0) {									// print the status every so often
+					logger.log('[rec] received changes, stubs:', doc_stubs.length + ', elapsed:', misc.friendly_ms(Date.now() - start) +
+						', pending:', pending_sequences);
 				}
 			}
 		}

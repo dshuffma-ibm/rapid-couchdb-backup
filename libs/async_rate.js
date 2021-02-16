@@ -88,7 +88,7 @@ module.exports = function (logger) {
 
 					retry_req(JSON.parse(JSON.stringify(req_options)), (err, resp) => {
 						if (err) {
-							logger.error('[spawn]connection error:\n', err);
+							logger.error('[spawn] connection error:\n', err);
 							http_errors.push(err);
 						}
 						remove_api(id);
@@ -134,7 +134,7 @@ module.exports = function (logger) {
 				logger.log('\n\nDECREASING RATE LIMIT to:', CURRENT_LIMIT_PER_SEC + ', detected max:', detected_max_rate_per_sec +
 					', prev limit:', prev_limit, '\n\n');
 				timer1 = setTimeout(() => {
-					allow_decrease = true;									// allow decreae to happen again (few seconds)
+					allow_decrease = true;									// allow decrease to happen again (few seconds)
 				}, 1000 * 5);
 
 				timer2 = setTimeout(() => {
@@ -306,7 +306,7 @@ module.exports = function (logger) {
 		try {
 			json = JSON.parse(response.body);
 		} catch (e) {
-			logger.error('unable to parse response to json:', e);
+			//logger.error('unable to parse response to json:', e);
 		}
 		return json;
 	}

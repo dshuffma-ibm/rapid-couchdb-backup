@@ -20,7 +20,7 @@ Otherwise it is only a little faster on large databases and its actually slower 
 
 | Backup Test | Rapid Backup | Cloudant CouchBackup | Speed Up |
 | ----------- | ----------- | ----------- | ----------- |
-| XLarge - 0% deleted    | 1.6 hrs        | 3.2 hrs       | 2.0x
+| XLarge - 0% deleted    | 2.0 hrs        | 3.2 hrs       | 1.6x
 | XLarge - 75% deleted   | 34.5 mins      | 3.2 hrs       | 5.6x
 | Large - 0% deleted     | 2.7 mins       | 6.0 mins      | 2.2x
 | Large - 75% deleted    | 47.7 secs      | 5.9 mins      | 7.4x
@@ -36,7 +36,7 @@ Otherwise it is only a little faster on large databases and its actually slower 
 
 ```js
 // to enable detailed logs pass a logger or the console to the lib,
-// else logging is disabled
+// else logging is disabled. (warning - there are a lot of logs!)
 const rapid_couchdb = require('../warp_speed.js')(console);
 
 // all options are shown below:
@@ -50,7 +50,7 @@ const opts = {
 	// [required] the optimal batch read response size in bytes.
 	// This will indirectly set the number of docs to batch read per request.
 	// It is recommended to be around 256KB - 1MB.
-	// Greater than 2MB may crash couchdb.
+	// Greater than 2MB may overload couchdb.
 	batch_get_bytes_goal: 1 * 1024 * 1024,
 
 	// [required] the stream to write the backup to.
@@ -62,10 +62,6 @@ const opts = {
 	// It will back off once a 429 response code is found.
 	// defaults 50
 	max_rate_per_sec: 30,
-
-	// [optional] the maximum number of global queries to be waiting on.
-	// defaults 10
-	max_parallel_globals: 8,
 
 	// [optional] the maximum number of read queries to be waiting on.
 	// defaults 20
@@ -94,12 +90,10 @@ rapid_couchdb.backup(opts, (errors, date_completed) => {
 ## How it Works
 The issue with the other backup tools are that they backup the delete history from the `_changes` feed.
 That leads to poor performance if you have a ton of deleted docs.
+Which only gets worse over time (assuming your applications are creating and deleting docs regularly).
+Each delete is still something it will process, so the time for a complete backup will actually grow _indefinitely_!
 
-The other backup tools will take longer and longer as your applications create and delete docs.
-Each delete is still something it will process, so the time for a complete backup will actually grow indefinitely!
-After years you could be spending hours and days processing deleted docs...
-
-The number of deleted docs is mostly irrelevant to this lib.
+The number of deleted docs is _mostly_ irrelevant to this lib.
 The main variable driving how long a backup will take is the number of docs that are not deleted.
 
 In `phase1` the backup will walk the `_changes` feed and ignore delete entries.
@@ -109,6 +103,7 @@ As the docs come in they will be written to the output stream.
 It will then repeat `phase1` and `phase2` until all docs are backed up.
 Once its done with that it needs to find if any docs were added/edited since the backup started.
 `phase3` will walk the `_changes` feed starting the feed from the start of the backup.
+Any new docs or changed docs will be written to the backup.
 
 ## Limitations
 - Docs that were deleted _during_ the backup will appear in the beginning of the backup. However they will be followed by their delete stub at the end of the backup data.

@@ -72,7 +72,7 @@ module.exports = (DB_CONNECTION_STRING) => {
 			return cb(_, formatResponse(resp));
 			/* example response
 			{
-				"update_seq": "71239--6DjNESINuQY-aDjJErJcEYkMSfIwJ4RmAQDt3bMB",
+				"update_seq": "71239--6NuQY-aDjJErJcEYkMSfIwJ4RmAQDt3bMB",
 				"db_name": "something",
 				"purge_seq": 0,
 				"sizes": {
