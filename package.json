@@ -1,0 +1,18 @@
+{
+	"name": "backup_test",
+	"version": "0.1.0",
+	"scripts": {
+		"start": "node backup.js",
+		"test": "node ./test/manual.js",
+		"old": "node ./test/old.js"
+	},
+	"engines": {
+		"node": "^8.16.0"
+	},
+	"main": "./warp_speed.js",
+	"dependencies": {
+		"async": "3.2.*",
+		"request": "2.88.*"
+	},
+	"devDependencies": {}
+}
