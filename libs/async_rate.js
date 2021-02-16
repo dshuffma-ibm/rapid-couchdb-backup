@@ -289,7 +289,7 @@ module.exports = function (logger) {
 			if (options._pause === false) {
 				return stall_cb();
 			} else {
-				console.log('[rec] paused.');
+				logger.log('[rec] paused.');
 				setTimeout(() => {
 					return stall_loop(stall_cb);												// postpone again - recurse
 				}, 500);

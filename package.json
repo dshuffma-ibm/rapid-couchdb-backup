@@ -1,5 +1,5 @@
 {
-	"name": "backup_test",
+	"name": "rapid-couchdb-backup",
 	"version": "0.1.0",
 	"scripts": {
 		"start": "node backup.js",
