@@ -11,6 +11,8 @@ module.exports = function (logger) {
 		};
 	}
 	const async = require('async');
+	const stream = require('stream');
+	const axios = require('axios').default;
 	const misc = require('./libs/misc.js')();
 	const async_rl = require('./libs/async_rate.js')(logger);
 	const change = require('./libs/change.js');
@@ -26,7 +28,6 @@ module.exports = function (logger) {
 		batch_get_bytes_goal: 1 * 1024 * 1024,
 		write_stream: null,
 		max_rate_per_sec: 50,													// [optional]
-		max_parallel_globals: 10,												// [optional]
 		max_parallel_reads: 10,													// [optional]
 		head_room_percent: 20,													// [optional]
 		min_rate_per_sec: 2,													// [optional]
@@ -41,7 +42,6 @@ module.exports = function (logger) {
 		let num_all_db_docs = 0;
 		let doc_stubs = [];
 		const db_errors = [];
-		//const DOC_STUB_BATCH_SIZE = 10000;								// pull doc stubs several thousand at a time (8,000 stubs = 1.05MB)
 		const MAX_STUBS_IN_MEMORY = 4e6;									// keep up to 4M doc stubs in memory (doc stubs are around 128 bytes each)
 		let high_ms = 0;
 		let metrics = [];
@@ -53,7 +53,6 @@ module.exports = function (logger) {
 		// check input arguments
 		options.max_rate_per_sec = options.max_rate_per_sec || 50;			// default
 		options.min_rate_per_sec = options.min_rate_per_sec || 2;			// default
-		options.max_parallel_globals = options.max_parallel_globals || 10;	// default
 		options.max_parallel_reads = options.max_parallel_reads || 20;		// default
 		options.head_room_percent = options.head_room_percent || 20;		// default
 		const input_errors = misc.check_inputs(options);					// check if there are any arg mistakes
@@ -117,7 +116,12 @@ module.exports = function (logger) {
 			// pase 1 - get doc stubs
 			doc_stubs = [];															// reset per loop
 			stubs_this_loop = 0;
-			phase1(data, (_, ret) => {
+			phase1(data, (p1_err, ret) => {
+				if (p1_err) {
+					// already logged
+					return million_cb(p1_err);
+				}
+
 				logger.log('[phase 1] complete. docs this loop:', stubs_this_loop, misc.friendly_ms(Date.now() - start), '\n');
 				metrics.push('finished phase 1-' + data._doc_id_iter + ' - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
@@ -145,17 +149,43 @@ module.exports = function (logger) {
 			});
 		}
 
-		// phase 1 - get doc stubs
+		// phase 1 - get doc stubs (uses a stream)
 		function phase1(data, phase_cb) {
 			logger.log('[phase 1] starting...');
 			data._since = data._since || 0;
 			logger.log('[phase 1] starting since sequence:', data._since);
 
-			const db = require('nano')({ url: options.db_connection + '/' + options.db_name });
-			const s = db.changesAsStream({ seq_interval: MAX_STUBS_IN_MEMORY, limit: MAX_STUBS_IN_MEMORY, since: data._since });
+			const req = {
+				url: options.db_connection + '/' + options.db_name + '/_changes',
+				params: { style: 'main_only', seq_interval: MAX_STUBS_IN_MEMORY, limit: MAX_STUBS_IN_MEMORY, since: data._since },
+				responseType: 'stream',
+				method: 'get',
+				timeout: 90000,
+				headers: { 'Accept': 'application/json' }
+			};
+			const s = new stream.PassThrough();
+			axios(req).then((response) => {
+				response.data.pipe(s)
+			}).catch(response => {
+				if (response.isAxiosError && response.response) {
+					response = response.response
+				}
+				const message = response.statusText;
+				const error = new Error(message);
+				error.statusCode = response.status || 500;
+				error.name = 'Error';
+				error.reason = message;
+				s.emit('error', error);
+			});
 			s.on('end', () => {
 				return phase_cb(null);
 			});
+			s.on('error', function (err) {
+				logger.error('[phase 1] unable to read _changes feed. error:');
+				logger.error(JSON.stringify(err, null, 2));
+				db_errors.push(err);
+				return phase_cb(err);		// will end be called too?
+			})
 			s.pipe(liner()).pipe(change(handle_change));
 		}
 
@@ -293,7 +323,7 @@ module.exports = function (logger) {
 			}
 		}
 
-		// handle the doc ids in the couchdb responses - returns number of docs in couchdb response
+		// handle each change feed entry
 		function handle_change(doc_change) {
 			if (doc_change && doc_change.last_seq) {
 				logger.log('[phase1] found the last sequence');
@@ -304,9 +334,11 @@ module.exports = function (logger) {
 			}
 
 			if (doc_change && doc_change.changes && !doc_change.deleted) {				// always skip deleted docs
-				const last = doc_change.changes.length - 1;
-				doc_stubs.push({ id: doc_change.id, rev: doc_change.changes[last].rev });
-				stubs_this_loop++;
+				try {
+					const last = doc_change.changes.length - 1;
+					doc_stubs.push({ id: doc_change.id, rev: doc_change.changes[last].rev });
+					stubs_this_loop++;
+				} catch (e) { }
 
 				if (doc_stubs.length % 10000 === 0) {
 					logger.log('[rec] received changes, stubs:', doc_stubs.length + ', took:', misc.friendly_ms(Date.now() - start) + ', pending:', pending_seq);

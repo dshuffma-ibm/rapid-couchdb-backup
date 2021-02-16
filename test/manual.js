@@ -7,12 +7,6 @@ const opts = {
 	db_connection: secrets.db_connection,
 	db_name: secrets.db_name,
 	max_rate_per_sec: 50,
-
-	// @ 12 i see phase1 reqs taking 2.7 minutes.. (1st round)
-	// @ 25 i see phase1 reqs taking over 6 minutes... (2nd round)
-	// @ 30 i see phase1 reqs taking 5.3 minutes.. (1st round) phase 1 took 32.1 minutes!
-	max_parallel_globals: 50,
-
 	max_parallel_reads: 50,
 	head_room_percent: 20,
 	batch_get_bytes_goal: 1 * 1024 * 1024,

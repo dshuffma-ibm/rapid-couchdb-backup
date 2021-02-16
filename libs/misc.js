@@ -110,37 +110,6 @@ module.exports = function () {
 		return ret;
 	};
 
-	// ------------------------------------------------------
-	// Pull each doc stub field out of the changes response
-	// ------------------------------------------------------
-	exports.parse_for_doc_stubs_changes = (body) => {
-		let ret = [];
-		if (body && body.results) {
-			for (let i in body.results) {
-				if (body.results[i]) {
-					const last = body.results[i].changes.length - 1;
-					ret.push({ id: body.results[i].id, rev: body.results[i].changes[last] });
-				}
-			}
-		}
-		return ret;
-	};
-
-	// ------------------------------------------------------
-	// Pull each doc id out of the response
-	// ------------------------------------------------------
-	exports.parse_for_stubs = (body) => {
-		let ret = [];
-		if (body && body.rows) {
-			for (let i in body.rows) {
-				if (body.rows[i].id) {
-					ret.push({ id: body.rows[i].id, rev: body.rows[i].rev });
-				}
-			}
-		}
-		return ret;
-	};
-
 	// --------------------------------------------
 	// check the input options
 	// --------------------------------------------
@@ -148,9 +117,6 @@ module.exports = function () {
 		const errors = [];
 		if (isNaN(opts.max_rate_per_sec)) {
 			errors.push('"max_rate_per_sec" must be a number');
-		}
-		if (isNaN(opts.max_parallel_globals)) {
-			errors.push('"max_parallel_globals" must be a number');
 		}
 		if (isNaN(opts.max_parallel_reads)) {
 			errors.push('"max_parallel_reads" must be a number');
