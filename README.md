@@ -7,8 +7,8 @@ Will backup active docs in a couchdb database to a [node stream](https://nodejs.
 
 This tool will start off with a slow api rate and increase it until a 429 response code is received.
 It will then lower the internal limit to stay within the rate limit and the `head_room_percent` setting.
-It will continue to adjust its internal rate if additional 429 codes are recevied throughout the backup.
-This "room" will allow other applictions to continue to access the db without hitting the rate limit.
+It will continue to adjust its internal rate if additional 429 codes are received throughout the backup.
+This "room" will allow other applications to continue to access the db without hitting the rate limit.
 
 There are also settings to control min/max rate limits as well as maximum pending requests.
 These settings should prevent the backup from overwhelming couchdb!
@@ -37,7 +37,7 @@ Otherwise it is only a little faster on large databases and its actually slower 
 ## Usage
 
 ```js
-// to enable detailed logs pass a loger or the console to the lib,
+// to enable detailed logs pass a logger or the console to the lib,
 // else logging is disabled
 const rapid_couchdb = require('../warp_speed.js')(console);
 
@@ -60,7 +60,7 @@ const opts = {
 
 	// [optional] the maximum number of apis to spawn per second.
 	// If this the rate limit is unknown, leave blank.
-	// This libe will auto detect the real rate limit.
+	// This lib will auto detect the real rate limit.
 	// It will back off once a 429 response code is found.
 	// defaults 50
 	max_rate_per_sec: 30,
@@ -78,7 +78,7 @@ const opts = {
 	// defaults 20
 	head_room_percent: 18,
 
-	// [optional] the mimum number of qpis to spawn per second.
+	// [optional] the minimum number of apis to spawn per second.
 	// when the lib encounters a 429 response code it lowers its internal limit.
 	// this setting will create a floor for the internal limit.
 	// defaults 2
@@ -98,7 +98,14 @@ The issue with the other backup tools are that they use the `_changes` feed.
 That feed performs poorly if you have a ton of deleted docs.
 Because each delete entry is still in the `_changes` feed.
 
-This lib does not use the `_changes` feed untill the backup is nearly done.
+The other backup tools will take longer and longer as your applications create and delete docs.
+Each delete is still something it will process, so the time for a complete backup will actually grow indefinitely!
+After years you could be spending hours and days processing deleted docs...
+
+The number of deleted docs is irrelevant to this lib.
+The main variable driving how long a backup will take is the number docs that are not deleted.
+
+This lib does not use the `_changes` feed until the backup is nearly done.
 In `phase1` the backup will grab the list of doc ids in the database.
 It will keep up to X doc ids in memory at a time.
 In `phase2` it will send bulk/batch GET doc apis to receive as many docs as the settings allow.
@@ -107,11 +114,11 @@ Once its done with that it needs to find if any docs were added/edited since the
 `phase3` will walk the `_changes` feed starting the feed from the start of the backup.
 
 ## Limitations
-- Docs that were deleted _during_ the backup will appear in the begining of the backup. However they will be followed by their delete stub at the end of the backup data.
+- Docs that were deleted _during_ the backup will appear in the beginning of the backup. However they will be followed by their delete stub at the end of the backup data.
 - Docs that were edited _during_ the backup will appear twice in the backup data. The latest version is the one towards the end of backup.
 - Will only back up active docs. Meaning the deleted doc history is not part of the backup (with the except when the delete happened _during_ the backup process).
 - Does not store doc `meta` data such as previous revision tokens.
-- Does not back up attachements (this was done to preserve compabilty with @cloudant/couchbackup's restore function).
+- Does not back up attachments (this was done to preserve compatibility with @cloudant/couchbackup's restore function).
 
 ## Backup Structure
 Same output as [@cloudant/couchbackup](https://github.com/cloudant/couchbackup#whats-in-a-backup-file).
@@ -123,5 +130,5 @@ It's a bunch of naked arrays with doc JSON objects separated by newlines.
 ```
 
 ## How to Restore
-The output format of this backup is compatble with [@cloudant/couchbackup](https://github.com/cloudant/couchbackup).
+The output format of this backup is compatible with [@cloudant/couchbackup](https://github.com/cloudant/couchbackup).
 Use that lib to restore.

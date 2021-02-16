@@ -15,7 +15,7 @@ module.exports = function (logger) {
 	const async_rl = require('./libs/async_rate.js')(logger);
 
 	//------------------------------------------------------------
-	// Bacup a CouchDB database (this is the only exposed function in the lib)
+	// Backup a CouchDB database (this is the only exposed function in the lib)
 	//------------------------------------------------------------
 	/*
 	options: {
@@ -39,7 +39,7 @@ module.exports = function (logger) {
 		let doc_stubs = [];
 		const db_errors = [];
 		const DOC_STUB_BATCH_SIZE = 20000;									// pull doc stubs 20k at a time
-		const MAX_STUBS_IN_MEMORAY = 5e6;									// keep up to 5M doc stubs in memory (doc stubs are around 128 bytes each)
+		const MAX_STUBS_IN_MEMORY = 5e6;									// keep up to 5M doc stubs in memory (doc stubs are around 128 bytes each)
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
@@ -99,7 +99,7 @@ module.exports = function (logger) {
 		function millions_doc_loop(data, million_cb) {
 			data._doc_id_iter = data._doc_id_iter || 1;								// init if needed
 			data._skip_offset = data._skip_offset || 0;								// init if needed
-			if (data._doc_id_iter * MAX_STUBS_IN_MEMORAY >= 100e6) {				// don't recurse forever, at some point give up
+			if (data._doc_id_iter * MAX_STUBS_IN_MEMORY >= 100e6) {				// don't recurse forever, at some point give up
 				logger.log('[loop] recursed on doc stubs for too long. giving up.', data._doc_id_iter);
 				return million_cb();
 			}
@@ -118,7 +118,7 @@ module.exports = function (logger) {
 
 					if (rec_doc_count > 0 && rec_doc_count === DOC_STUB_BATCH_SIZE) {	// if num of docs is the same as "limit" then there are more docs
 						logger.log('[phase 2] there are more docs to handle. going back to phase 1. loops:', data._doc_id_iter + '/' + data.loops, '\n');
-						data._skip_offset += MAX_STUBS_IN_MEMORAY;
+						data._skip_offset += MAX_STUBS_IN_MEMORY;
 						data._doc_id_iter++;
 						return millions_doc_loop(data, million_cb);					// recurse
 					} else {
@@ -142,7 +142,7 @@ module.exports = function (logger) {
 				max_parallel: options.max_parallel_globals,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
-				request_opts_builder: (iter) => {								// build the options for each batch clouant api
+				request_opts_builder: (iter) => {								// build the options for each batch couchdb api
 					const skip = (iter - 1) * DOC_STUB_BATCH_SIZE + data._skip_offset;
 					return {
 						method: 'GET',
@@ -173,10 +173,10 @@ module.exports = function (logger) {
 			});
 
 			function calc_count() {
-				if (data.doc_count < MAX_STUBS_IN_MEMORAY) {
+				if (data.doc_count < MAX_STUBS_IN_MEMORY) {
 					return Math.ceil(data.doc_count / DOC_STUB_BATCH_SIZE);
 				} else {
-					return Math.ceil(MAX_STUBS_IN_MEMORAY / DOC_STUB_BATCH_SIZE);
+					return Math.ceil(MAX_STUBS_IN_MEMORY / DOC_STUB_BATCH_SIZE);
 				}
 			}
 		}
@@ -194,7 +194,7 @@ module.exports = function (logger) {
 				max_parallel: options.max_parallel_reads,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
-				request_opts_builder: (iter) => {								// build the options for each batch clouant api
+				request_opts_builder: (iter) => {								// build the options for each batch couchdb api
 					const start = (iter - 1) * data.batch_size;
 					const end = start + data.batch_size;
 					return {
@@ -286,7 +286,7 @@ module.exports = function (logger) {
 			const job_elapsed_ms = Date.now() - start;
 
 			// if it will take more than 1 loop, multiple the estimate by the number of loops & some fraction of the last loop
-			const loop_multiplier = (doc_count < MAX_STUBS_IN_MEMORAY) ? 1 : (doc_count / MAX_STUBS_IN_MEMORAY);
+			const loop_multiplier = (doc_count < MAX_STUBS_IN_MEMORY) ? 1 : (doc_count / MAX_STUBS_IN_MEMORY);
 			const estimated_total_ms = (percent_docs === 0) ? 0 : (1 / (percent_docs / 100) * job_elapsed_ms * loop_multiplier);
 			const time_left = (estimated_total_ms - job_elapsed_ms);
 			logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left));
@@ -361,7 +361,7 @@ module.exports = function (logger) {
 					const doc_count = resp1.doc_count;
 					const del_count = resp1.doc_del_count;
 					const seq = resp[1].last_seq;
-					const loops = Math.ceil(doc_count / MAX_STUBS_IN_MEMORAY);
+					const loops = Math.ceil(doc_count / MAX_STUBS_IN_MEMORY);
 					logger.log('[stats] size:', misc.friendly_bytes(resp1.sizes.external));
 					logger.log('[stats] docs:', misc.friendly_number(doc_count));
 					logger.log('[stats] avg doc:', misc.friendly_bytes(avg_doc_bytes));

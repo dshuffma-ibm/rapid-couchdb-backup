@@ -70,7 +70,7 @@ module.exports = function (logger) {
 		});
 
 		// --------------------------------------------
-		// spin up aysnc requests as fast as possible but backoff once a 429 is reached
+		// spin up async requests as fast as possible but backoff once a 429 is reached
 		// --------------------------------------------
 		function launcher(things, options, req_cb, fin_cb) {
 			async.eachLimit(things, options.max_parallel, (thing, cb) => {
