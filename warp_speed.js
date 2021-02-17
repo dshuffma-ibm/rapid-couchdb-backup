@@ -42,13 +42,13 @@ module.exports = function (logger) {
 		let num_all_db_docs = 0;
 		let doc_stubs = [];
 		const db_errors = [];
-		const MAX_STUBS_IN_MEMORY = 4e6;									// keep up to 4M doc stubs in memory (doc stubs are around 128 bytes each)
+		const MAX_STUBS_IN_MEMORY = options._MAX_STUBS_IN_MEMORY || 4e6;	// keep up to 4M doc stubs in memory (doc stubs are around 128 bytes each)
 		let high_ms = 0;
 		let metrics = [];
 		let last_sequence = 0;
 		let changes_this_loop = 0;
 		let pending_sequences = '-';
-		logger.log('backup preflight starting @', start);
+		logger.log('[stats] backup preflight starting @', start);
 
 		// check input arguments
 		options.batch_get_bytes_goal = options.batch_get_bytes_goal || 1 * 1024 * 1024;	// default 1MB
@@ -70,7 +70,6 @@ module.exports = function (logger) {
 				return cb({ internal_errors });
 			}
 
-			logger.log('[stats] backup preflight complete.');
 			num_all_db_docs = data.doc_count;								// hoist scope
 
 			// process a few million docs per loop

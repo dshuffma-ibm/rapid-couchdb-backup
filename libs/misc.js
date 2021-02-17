@@ -152,5 +152,43 @@ module.exports = function () {
 		return errors;
 	};
 
+	// --------------------------------------------
+	// take the old backup lib format and clean its output to match the new format - used for testing only
+	// --------------------------------------------
+	exports._clean_backup_data = (backup) => {
+		const parts = backup.split('\n');
+
+		// breakup report by newlines and parse each section
+		let docs = [];
+		for (let i in parts) {										// skip the blank lines
+			if (parts[i]) {
+				try {
+					const temp = JSON.parse(parts[i]);
+					docs = docs.concat(temp);
+					console.log('[clean] found section:', i, 'len:', temp.length);
+				} catch (e) {
+					console.error(e);
+				}
+			}
+		}
+		console.log('[clean] found docs:', docs.length);
+
+		// remove docs that are deleted
+		let active_docs = [];
+		for (let i in docs) {
+			if (!docs[i]._deleted) {
+				delete docs[i]._revisions;
+				active_docs.push(docs[i]);
+			}
+		}
+
+		// sort the docs
+		console.log('[clean] found active docs:', active_docs.length);
+		active_docs.sort(function (a, b) {
+			return (a._id > b._id) ? 1 : -1;
+		});
+		return active_docs;
+	};
+
 	return exports;
 };

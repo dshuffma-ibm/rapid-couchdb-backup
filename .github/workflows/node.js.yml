@@ -30,4 +30,5 @@ jobs:
           node-version: ${{ matrix.node-version }}
       - run: npm ci
       - run: npm audit --production
+      - run: npm i @cloudant/couchbackup
       - run: npm test
