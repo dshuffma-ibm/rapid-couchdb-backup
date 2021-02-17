@@ -33,6 +33,11 @@ const misc = require('../libs/misc.js')();
 // [test runs] - 32KB - 17 docs (0 deleted docs - 0%) 500 batch size
 //    took: 558 ms [14.1 KB]
 //    took: 565 ms [14.1 KB]
+
+// micro
+// [test runs] - 4.8MB - 155 docs (5.75k deleted docs - 97%) 2967 batch size
+//    took: 2.5 seconds [1.3MB]
+//    took: 2.6 seconds [1.3MB]
 // ------------------------------------------------
 
 const start = Date.now();

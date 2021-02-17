@@ -31,7 +31,7 @@ module.exports = function (logger) {
 		max_parallel_reads: 10,													// [optional]
 		head_room_percent: 20,													// [optional]
 		min_rate_per_sec: 2,													// [optional]
-		// dsh todo add custom timeout setting
+		read_timeout_ms: 120000,												// [optional]
 	}
 	*/
 	exports.backup = (options, cb) => {
@@ -51,6 +51,7 @@ module.exports = function (logger) {
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
+		options.read_timeout_ms = options.read_timeout_ms || 1000 * 60 * 4;	// default 4 min
 		options.max_rate_per_sec = options.max_rate_per_sec || 50;			// default
 		options.min_rate_per_sec = options.min_rate_per_sec || 2;			// default
 		options.max_parallel_reads = options.max_parallel_reads || 20;		// default
@@ -83,10 +84,10 @@ module.exports = function (logger) {
 					metrics.push('finished phase 3 - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
 					if (finished_docs < data.doc_count) {
-						logger.error('[fin] missing docs... found:', finished_docs, 'db:', data.doc_count);
-						db_errors.push('warning - detected missing docs. found:' + finished_docs + ' db originally had:' + data.doc_count);
+						logger.error('[fin] missing docs... found:', finished_docs, 'db had @ start', data.doc_count);
+						db_errors.push('warning - detected missing docs. found:' + finished_docs + ' db had @ start:' + data.doc_count);
 					} else {
-						logger.log('[fin] the # of finished docs is good. found:', finished_docs, 'db:', data.doc_count);
+						logger.log('[fin] the # of finished docs is good. found:', finished_docs, 'db had @ start:', data.doc_count);
 					}
 
 					prepare_for_death(() => {
@@ -219,7 +220,7 @@ module.exports = function (logger) {
 						headers: {
 							'Content-Type': 'application/json'
 						},
-						timeout: 8 * 60 * 1000,
+						timeout: options.read_timeout_ms,
 						_name: 'phase2',										// name to use in logs
 					};
 				}
@@ -243,7 +244,7 @@ module.exports = function (logger) {
 			logger.log('[phase 3] starting...');
 			logger.log('[phase 3] i:', data._changes_iter, 'looking since sequence:', data.seq.substring(0, 16));
 
-			if (data._changes_iter >= 20) {
+			if (data._changes_iter >= 75) {
 				logger.log('[phase 3] recursed on changes for too long. giving up.');
 				return phase_cb();
 			}

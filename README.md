@@ -20,12 +20,12 @@ Otherwise it is only a little faster on large databases and its actually slower 
 
 | Backup Test | Rapid Backup | Cloudant CouchBackup | Speed Up |
 | ----------- | ----------- | ----------- | ----------- |
-| XLarge - 0% deleted    | 2.0 hrs        | 3.2 hrs       | 1.6x
+| XLarge - 0% deleted    | 1.8 hrs        | 3.2 hrs       | 1.8x
 | XLarge - 75% deleted   | 34.5 mins      | 3.2 hrs       | 5.6x
 | Large - 0% deleted     | 2.7 mins       | 6.0 mins      | 2.2x
 | Large - 75% deleted    | 52.9 secs      | 5.9 mins      | 6.7x
-| Small - 0% deleted     | 3.3 secs       | 2.4 secs      | 0.7x (slower)
-| Small - 75% deleted    | 2.5 secs       | 2.4 secs      | 0.9x (slower)
+| Small - 0% deleted     | 3.4 secs       | 2.4 secs      | 0.7x (slower)
+| Small - 75% deleted    | 1.9 secs       | 2.4 secs      | 1.3
 
 - XLarge - 22M docs, total size 10GB
 - Large - 581k docs, total size 275MB
@@ -77,6 +77,10 @@ const opts = {
 	// this setting will create a floor for the internal limit.
 	// defaults 2
 	min_rate_per_sec: 2,
+
+	// [optional] the maximum amount of time to wait on an read api in milliseconds.
+	// defaults 240000
+	read_timeout_ms: 1000 * 60 * 2,
 };
 
 rapid_couchdb.backup(opts, (errors, date_completed) => {

@@ -130,6 +130,9 @@ module.exports = function () {
 		if (isNaN(opts.batch_get_bytes_goal)) {
 			errors.push('"batch_get_bytes_goal" must be a number');
 		}
+		if (isNaN(opts.read_timeout_ms)) {
+			errors.push('"read_timeout_ms" must be a number');
+		}
 
 		if (!opts.db_connection || typeof opts.db_connection !== 'string') {
 			errors.push('"db_connection" must be a string');

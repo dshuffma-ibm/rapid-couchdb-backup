@@ -90,7 +90,7 @@ rapid_couchdb.backup(opts, (errors, date_completed) => {
 
 // warp 2 small
 // [test runs] - 4.2MB - 2k docs (0 deleted docs - 0%) 269 batch size
-//    took: 3.7 seconds [6.9MB] (32k/min) | {0.06166min -> 0.65x}
+//    took: 3.7 seconds [6.9MB] (324k/min) | {0.06166min -> 0.65x}
 //    took: 3.7 seconds [6.9MB]
 //    took: 3.2 seconds [6.9MB]
 
@@ -109,12 +109,41 @@ rapid_couchdb.backup(opts, (errors, date_completed) => {
 //   1, 50 -> took: 2.7 minutes [360MB] (233k/min) (111MB/min) | {2.7min -> 2.5x}
 //   1, 50 -> took: 2.7 minutes [360MB] (233k/min) (111MB/min) | {2.7min -> 2.5x}
 
-// warp 2 - large deletes
+// warp 3 - large deletes
 // [test runs] - 285MB - 144k docs (436k deleted docs - 75%) 2014 batch size
 //   1, 50 -> took: 47.7 seconds [82MB] (181k/min) (358MB/min) | {0.795min -> 7.4x}
 //   1, 50 -> took: 47.6 seconds [82MB] (182k/min) (359MB/min) | {0.793min -> 7.4x}
+//   1, 50 -> took: 54.1 seconds [82MB] (159k/min) (316MB/min) | {0.902min -> 6.5x}
 
 // warp 3 - xlarge  (took 48 seconds to get 4M doc stubs!)
 // [test runs] - 10.6GB - 22.7M docs (4 deleted docs - 0%) 2058 batch size
-//   1, 80, 50 -> took:  [MB]
+//   1, 80, 50 -> took:  1.8 hrs [12.6GB]
+/*
+[fin] the # of finished docs is good. found: 22,862,831 db: 22,859,446
+[fin] [
+  "finished L1 phase 1 - 2.2 mins, docs:0",
+  "finished L1 phase 2 - 18.8 mins, docs:4000000",
+  "finished L2 phase 1 - 20.8 mins, docs:4000000",
+  "finished L2 phase 2 - 37.5 mins, docs:7999998",
+  "finished L3 phase 1 - 39.5 mins, docs:7999998",
+  "finished L3 phase 2 - 56.9 mins, docs:11999997",
+  "finished L4 phase 1 - 58.9 mins, docs:11999997",
+  "finished L4 phase 2 - 1.3 hrs, docs:15999997",
+  "finished L5 phase 1 - 1.3 hrs, docs:15999997",
+  "finished L5 phase 2 - 1.6 hrs, docs:19999996",
+  "finished L6 phase 1 - 1.6 hrs, docs:19999996",
+  "finished L6 phase 2 - 1.8 hrs, docs:22862831",
+  "finished phase 3 - 1.8 hrs, docs:22862831"
+]
+*/
+
+// warp 3 small
+// [test runs] - 4.5MB - 2k docs (0 deleted docs - 0%) 269 batch size
+//    took: 3.8 seconds [6.9MB] (32k/min) | {0.0633min -> 0.63x}
+//    took: 3.4 seconds [6.9MB] (35k/min) | {0.0567min -> 0.7x}
+
+// warp 3 micro
+// [test runs] - 4.8MB - 155 docs (5.75k deleted docs - 97%) 2967 batch size
+//    took: 1.4 seconds [55KB] | {0.0233min -> 1.8x}
+//    took: 1.6 seconds [55KB] | {0.0267min -> 1.6x}
 // ------------------------------------------------
