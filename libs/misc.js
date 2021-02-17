@@ -40,7 +40,7 @@ module.exports = function () {
 		else if (ms > 60 * 60 * 1000) { ret = (ms / 1000 / 60 / 60).toFixed(1) + ' hrs'; }	//format for hours
 		else if (ms > 60 * 1000) { ret = (ms / 1000 / 60).toFixed(1) + ' mins'; }			//format for mins
 		else if (ms > 1000) { ret = (ms / 1000).toFixed(1) + ' secs'; }						//format for secs
-		else { ret = ms.toFixed(1) + ' ms'; }												//format to ms
+		else { ret = ms.toFixed(0) + ' ms'; }												//format to ms
 		return ret;
 	};
 
@@ -109,20 +109,6 @@ module.exports = function () {
 		}
 		return ret;
 	};
-	// ------------------------------------------------------
-	// Pull each doc id out of the response
-	// ------------------------------------------------------
-	exports.parse_for_stubs = (body) => {
-		let ret = [];
-		if (body && body.rows) {
-			for (let i in body.rows) {
-				if (body.rows[i].id) {
-					ret.push({ id: body.rows[i].id, rev: body.rows[i].rev });
-				}
-			}
-		}
-		return ret;
-	};
 
 	// --------------------------------------------
 	// check the input options
@@ -131,9 +117,6 @@ module.exports = function () {
 		const errors = [];
 		if (isNaN(opts.max_rate_per_sec)) {
 			errors.push('"max_rate_per_sec" must be a number');
-		}
-		if (isNaN(opts.max_parallel_globals)) {
-			errors.push('"max_parallel_globals" must be a number');
 		}
 		if (isNaN(opts.max_parallel_reads)) {
 			errors.push('"max_parallel_reads" must be a number');
@@ -146,6 +129,9 @@ module.exports = function () {
 		}
 		if (isNaN(opts.batch_get_bytes_goal)) {
 			errors.push('"batch_get_bytes_goal" must be a number');
+		}
+		if (isNaN(opts.read_timeout_ms)) {
+			errors.push('"read_timeout_ms" must be a number');
 		}
 
 		if (!opts.db_connection || typeof opts.db_connection !== 'string') {

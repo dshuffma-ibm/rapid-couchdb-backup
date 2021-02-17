@@ -18,6 +18,10 @@ const misc = require('../libs/misc.js')();
 //    took: 5.9 minutes [177MB]
 //    took: 5.9 minutes [177MB] (48MB/min)
 
+// xlarge
+// [test runs] - 10.6GB - 22.7M docs (4 deleted docs - 0%) 500 batch size
+//    took:  4.8 hrs [14.1GB]
+
 // ! large
 // [test runs] - 299MB - 629k docs (0 deleted docs - 0%) 500 batch size
 //    spool length error - crash!
@@ -33,6 +37,11 @@ const misc = require('../libs/misc.js')();
 // [test runs] - 32KB - 17 docs (0 deleted docs - 0%) 500 batch size
 //    took: 558 ms [14.1 KB]
 //    took: 565 ms [14.1 KB]
+
+// micro
+// [test runs] - 4.8MB - 155 docs (5.75k deleted docs - 97%) 2967 batch size
+//    took: 2.5 seconds [1.3MB]
+//    took: 2.6 seconds [1.3MB]
 // ------------------------------------------------
 
 const start = Date.now();
@@ -56,14 +65,18 @@ const cle = cl.backup(
 		}
 	});
 
+
 cle.on('changes', (evt) => {
-	console.log('changes:', JSON.stringify(evt));
+	const elapsed = Date.now() - start;
+	console.log('changes:', JSON.stringify(evt), 'took', misc.friendly_ms(elapsed));
 });
 cle.on('written', (evt) => {
-	console.log('written:', JSON.stringify(evt));
+	const elapsed = Date.now() - start;
+	console.log('written:', JSON.stringify(evt), 'took', misc.friendly_ms(elapsed));
 });
 cle.on('finished', (evt) => {
-	console.log('finished:', JSON.stringify(evt));
+	const elapsed = Date.now() - start;
+	console.log('finished:', JSON.stringify(evt), 'took', misc.friendly_ms(elapsed));
 });
 cle.on('error', (evt) => {
 	console.error('error:', JSON.stringify(evt));

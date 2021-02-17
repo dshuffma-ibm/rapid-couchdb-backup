@@ -88,7 +88,7 @@ module.exports = function (logger) {
 
 					retry_req(JSON.parse(JSON.stringify(req_options)), (err, resp) => {
 						if (err) {
-							logger.error('[spawn]connection error:\n', err);
+							logger.error('[spawn] connection error:\n', err);
 							http_errors.push(err);
 						}
 						remove_api(id);
@@ -134,7 +134,7 @@ module.exports = function (logger) {
 				logger.log('\n\nDECREASING RATE LIMIT to:', CURRENT_LIMIT_PER_SEC + ', detected max:', detected_max_rate_per_sec +
 					', prev limit:', prev_limit, '\n\n');
 				timer1 = setTimeout(() => {
-					allow_decrease = true;									// allow decreae to happen again (few seconds)
+					allow_decrease = true;									// allow decrease to happen again (few seconds)
 				}, 1000 * 5);
 
 				timer2 = setTimeout(() => {
@@ -153,7 +153,7 @@ module.exports = function (logger) {
 					stalled_ids[id] = true;
 					return stall_api(id, end_stall_cb);						// postpone again - recurse
 				}
-			}, 100);
+			}, 125);
 		}
 
 		// see if we are at the rate limit or not
@@ -224,13 +224,14 @@ module.exports = function (logger) {
 			// --- Send the Request --- //
 			request(opts, (req_e, resp) => {
 				if (req_e) {																// detect timeout request error
-					logger.error('[' + opts._name + ' ' + opts._tx_id + '] unable to reach destination. error:', req_e);
 					resp = resp ? resp : {};												// init if not already present
 					resp.statusCode = resp.statusCode ? resp.statusCode : 500;				// init code if empty
 					resp.body = resp.body ? resp.body : req_e;								// copy requests error to resp if its empty
 					if (req_e.toString().indexOf('TIMEDOUT') >= 0) {
-						logger.error('[' + opts._name + ' ' + opts._tx_id + '] timeout exceeded:', opts.timeout);
+						logger.error('! [' + opts._name + ' ' + opts._tx_id + '] failed - timeout exceeded:', opts.timeout);
 						resp.statusCode = 408;
+					} else {
+						logger.error('! [' + opts._name + ' ' + opts._tx_id + '] failed - unable to reach destination. error:', req_e);
 					}
 				}
 
@@ -305,7 +306,7 @@ module.exports = function (logger) {
 		try {
 			json = JSON.parse(response.body);
 		} catch (e) {
-			logger.error('unable to parse response to json:', e);
+			//logger.error('unable to parse response to json:', e);
 		}
 		return json;
 	}
