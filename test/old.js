@@ -52,7 +52,7 @@ const options = {
 	//log: 'mylogs.json'
 };
 const cle = cl.backup(
-	secrets.db_connection + '/' + secrets.db_name,
+	secrets.couchdb_url + '/' + secrets.db_name,
 	fs.createWriteStream(DEST_FILENAME),
 	options,
 	function (err, data) {

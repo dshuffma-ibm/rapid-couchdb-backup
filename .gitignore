@@ -47,3 +47,4 @@ scripts/reports
 *.zip
 _backup_docs.json
 _old_backup.json
+_old_backup_cleaned.json
