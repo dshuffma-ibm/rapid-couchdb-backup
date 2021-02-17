@@ -41,19 +41,20 @@ const rapid_couchdb = require('../warp_speed.js')(console);
 // all options are shown below:
 const opts = {
 	// [required] the database connection url, including basic auth and port if applicable
-	db_connection: 'https://auth:password@url.com:443',
+	couchdb_url: 'https://auth:password@url.com:443',
 
 	// [required] the database name to backup
 	db_name: 'my-db',
 
-	// [required] the optimal batch read response size in bytes.
-	// This will indirectly set the number of docs to batch read per request.
-	// It is recommended to be around 256KB - 1MB.
-	// Greater than 2MB may overload couchdb.
-	batch_get_bytes_goal: 1 * 1024 * 1024,
-
 	// [required] the stream to write the backup to.
 	write_stream: fs.createWriteStream('./_backup_docs.json'),
+
+	// [optional] the optimal batch read response size in bytes.
+	// This will indirectly set the number of docs to batch read per request.
+	// Recommended to set this around 256KB - 1MB (the higher the better, usually).
+	// Setting this too high may overwhelm couchdb.
+	// defaults 1048576 (1MB)
+	batch_get_bytes_goal: 1 * 1024 * 1024,
 
 	// [optional] the maximum number of apis to spawn per second.
 	// If this the rate limit is unknown, leave blank.
@@ -63,7 +64,8 @@ const opts = {
 	max_rate_per_sec: 30,
 
 	// [optional] the maximum number of read queries to be waiting on.
-	// defaults 20
+	// Setting this too high may overwhelm couchdb (10-50 seems okay).
+	// defaults 25
 	max_parallel_reads: 30,
 
 	// [optional] how much of the real rate limit should be left for other applications.
@@ -78,7 +80,7 @@ const opts = {
 	min_rate_per_sec: 2,
 
 	// [optional] the maximum amount of time to wait on an read api in milliseconds.
-	// defaults 240000
+	// defaults 240000 (4 minutes)
 	read_timeout_ms: 1000 * 60 * 2,
 };
 

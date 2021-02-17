@@ -23,7 +23,7 @@ module.exports = function (logger) {
 	//------------------------------------------------------------
 	/*
 	options: {
-		db_connection: 'https://apikey-:pass@account.cloudant.com',
+		couchdb_url: 'https://apikey-:pass@account.cloudant.com',
 		db_name: 'database',
 		batch_get_bytes_goal: 1 * 1024 * 1024,
 		write_stream: null,
@@ -36,7 +36,7 @@ module.exports = function (logger) {
 	*/
 	exports.backup = (options, cb) => {
 		const start = Date.now();
-		const couch = require('./libs/couchdb.js')(options.db_connection);
+		const couch = require('./libs/couchdb.js')(options.couchdb_url);
 		let finished_docs = 0;
 		let async_options = {};												// this needs to be at this scope so the write stream can pause it
 		let num_all_db_docs = 0;
@@ -51,10 +51,11 @@ module.exports = function (logger) {
 		logger.log('backup preflight starting @', start);
 
 		// check input arguments
+		options.batch_get_bytes_goal = options.batch_get_bytes_goal || 1 * 1024 * 1024;	// default 1MB
 		options.read_timeout_ms = options.read_timeout_ms || 1000 * 60 * 4;	// default 4 min
 		options.max_rate_per_sec = options.max_rate_per_sec || 50;			// default
 		options.min_rate_per_sec = options.min_rate_per_sec || 2;			// default
-		options.max_parallel_reads = options.max_parallel_reads || 20;		// default
+		options.max_parallel_reads = options.max_parallel_reads || 25;		// default
 		options.head_room_percent = options.head_room_percent || 20;		// default
 		const input_errors = misc.check_inputs(options);					// check if there are any arg mistakes
 		if (input_errors.length > 0) {
@@ -84,13 +85,14 @@ module.exports = function (logger) {
 					metrics.push('finished phase 3 - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
 					if (finished_docs < data.doc_count) {
-						logger.error('[fin] missing docs... found:', finished_docs, 'db had @ start', data.doc_count);
-						db_errors.push('warning - detected missing docs. found:' + finished_docs + ' db had @ start:' + data.doc_count);
+						logger.error('[fin] missing docs... found:', finished_docs + ', db had @ start', data.doc_count);
+						db_errors.push('warning - detected missing docs. found:' + finished_docs + ', db had @ start:' + data.doc_count);
 					} else {
-						logger.log('[fin] the # of finished docs is good. found:', finished_docs, 'db had @ start:', data.doc_count);
+						logger.log('[fin] the # of finished docs is good. found:', finished_docs + ', db had @ start:', data.doc_count);
 					}
 
 					prepare_for_death(() => {
+						logger.log('[fin] db:', options.db_name);
 						logger.log('[fin] doc backup complete.', misc.friendly_ms(Date.now() - start));
 						logger.log('[fin] backup errors:', db_errors.length);
 						logger.log('[fin]', JSON.stringify(metrics, null, 2));
@@ -161,7 +163,7 @@ module.exports = function (logger) {
 			logger.log('[phase 1] starting since sequence:', data._since);
 
 			const req = {
-				url: options.db_connection + '/' + options.db_name + '/_changes',
+				url: options.couchdb_url + '/' + options.db_name + '/_changes',
 				params: { style: 'main_only', seq_interval: MAX_STUBS_IN_MEMORY, limit: MAX_STUBS_IN_MEMORY, since: data._since },
 				responseType: 'stream',
 				method: 'get',
@@ -214,7 +216,7 @@ module.exports = function (logger) {
 					const end = start + data.batch_size;
 					return {
 						method: 'POST',
-						baseUrl: options.db_connection,
+						baseUrl: options.couchdb_url,
 						url: '/' + options.db_name + '/_bulk_get',
 						body: JSON.stringify({ docs: doc_stubs.slice(start, end) }),
 						headers: {
@@ -301,17 +303,19 @@ module.exports = function (logger) {
 				const percent_docs = finished_docs / num_all_db_docs * 100;
 				logger.log('[rec] received resp for api:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
 					', high:', misc.friendly_ms(high_ms) + ', fin docs:', misc.friendly_number(finished_docs), '[' + (percent_docs).toFixed(1) + '%]');
-				predict_time_left(percent_docs);
+				predict_time_left(api_id, percent_docs);
 				write_docs_2_stream(api_id, docs);
 			}
 		}
 
 		// log much time is left for all loops to complete
-		function predict_time_left(percent_all_db_docs_done) {
-			const job_elapsed_ms = Date.now() - start;
-			const estimated_total_ms = (percent_all_db_docs_done === 0) ? 0 : (1 / (percent_all_db_docs_done / 100) * job_elapsed_ms);
-			const time_left = (estimated_total_ms - job_elapsed_ms);
-			logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left));
+		function predict_time_left(api_id, percent_all_db_docs_done) {
+			if (api_id % 3 === 0) {											// only log this every now and then
+				const job_elapsed_ms = Date.now() - start;
+				const estimated_total_ms = (percent_all_db_docs_done === 0) ? 0 : (1 / (percent_all_db_docs_done / 100) * job_elapsed_ms);
+				const time_left = (estimated_total_ms - job_elapsed_ms);
+				logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left));
+			}
 		}
 
 		// write the docs to the write stream
@@ -398,6 +402,7 @@ module.exports = function (logger) {
 					const del_count = resp1.doc_del_count;
 					const seq = resp[1].last_seq;
 					const loops = Math.ceil((doc_count + del_count) / MAX_STUBS_IN_MEMORY);			// phase1 loops over deleted and active docs
+					logger.log('[stats] db:', options.db_name);
 					logger.log('[stats] size:', misc.friendly_bytes(resp1.sizes.external));
 					logger.log('[stats] docs:', misc.friendly_number(doc_count));
 					logger.log('[stats] avg doc:', misc.friendly_bytes(avg_doc_bytes));

@@ -134,8 +134,8 @@ module.exports = function () {
 			errors.push('"read_timeout_ms" must be a number');
 		}
 
-		if (!opts.db_connection || typeof opts.db_connection !== 'string') {
-			errors.push('"db_connection" must be a string');
+		if (!opts.couchdb_url || typeof opts.couchdb_url !== 'string') {
+			errors.push('"couchdb_url" must be a string');
 		}
 		if (!opts.db_name || typeof opts.db_name !== 'string') {
 			errors.push('"db_name" must be a string');

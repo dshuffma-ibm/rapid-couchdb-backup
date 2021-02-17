@@ -4,7 +4,7 @@ const rapid_couchdb = require('../warp_speed.js')(console);
 const secrets = require('../env/secrets.json');
 
 const opts = {
-	db_connection: secrets.db_connection,
+	couchdb_url: secrets.couchdb_url,
 	db_name: secrets.db_name,
 	max_rate_per_sec: 50,
 	max_parallel_reads: 50,
