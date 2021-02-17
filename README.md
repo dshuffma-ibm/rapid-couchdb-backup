@@ -3,8 +3,8 @@
 A couchdb database backup tool focusing on **speed** and **rate limit controls**.
 Will backup active docs in a couchdb database to a [node stream](https://nodejs.org/api/stream.html) (which could be a file or something else).
 
-## Rate Limit Controls
 
+## Rate Limit Controls
 This tool will start off with a slow api rate and increase it until a 429 response code is received.
 It will then lower the internal limit to stay within the rate limit and the `head_room_percent` setting.
 It will continue to adjust its internal rate if additional 429 codes are received throughout the backup.
@@ -14,14 +14,13 @@ There are also settings to control min/max rate limits as well as maximum pendin
 These settings should prevent the backup from overwhelming couchdb!
 
 ## Speed
-
 This couchdb backup lib will be much faster than [@cloudant/couchbackup](https://github.com/cloudant/couchbackup) **if the database has a high deleted doc percentage.**
-Otherwise it is only a little faster on large databases and its actually slower on very small databases.
+Otherwise it is only faster on large databases and its actually slower on very small databases.
 
 | Backup Test | Rapid Backup | Cloudant CouchBackup | Speed Up |
 | ----------- | ----------- | ----------- | ----------- |
-| XLarge - 0% deleted    | 1.8 hrs        | 3.2 hrs       | 1.8x
-| XLarge - 75% deleted   | 34.5 mins      | 3.2 hrs       | 5.6x
+| XLarge - 0% deleted    | 1.8 hrs        | 4.8 hrs       | 2.7x
+| XLarge - 75% deleted   | 34.5 mins      | 4.9 hrs       | 8.5x
 | Large - 0% deleted     | 2.7 mins       | 6.0 mins      | 2.2x
 | Large - 75% deleted    | 52.9 secs      | 5.9 mins      | 6.7x
 | Small - 0% deleted     | 3.4 secs       | 2.4 secs      | 0.7x (slower)
@@ -29,7 +28,7 @@ Otherwise it is only a little faster on large databases and its actually slower 
 
 - XLarge - 22M docs, total size 10GB
 - Large - 581k docs, total size 275MB
-- Small - 2k docs, total size 4MB
+- Small - 2k docs, total size 5MB
 
 
 ## Usage

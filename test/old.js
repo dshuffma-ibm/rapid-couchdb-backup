@@ -18,6 +18,10 @@ const misc = require('../libs/misc.js')();
 //    took: 5.9 minutes [177MB]
 //    took: 5.9 minutes [177MB] (48MB/min)
 
+// xlarge
+// [test runs] - 10.6GB - 22.7M docs (4 deleted docs - 0%) 500 batch size
+//    took:  4.8 hrs [14.1GB]
+
 // ! large
 // [test runs] - 299MB - 629k docs (0 deleted docs - 0%) 500 batch size
 //    spool length error - crash!
