@@ -240,7 +240,8 @@ module.exports = function (logger) {
 		// phase 3 - process any changes since we started the backup
 		function phase3(data, phase_cb) {
 			data._changes_iter = data._changes_iter || 1;						// init if needed
-			logger.log('[phase 3] starting... i:', data._changes_iter);
+			logger.log('[phase 3] starting...');
+			logger.log('[phase 3] i:', data._changes_iter, 'looking since sequence:', data.seq.substring(0, 16));
 
 			if (data._changes_iter >= 20) {
 				logger.log('[phase 3] recursed on changes for too long. giving up.');
@@ -272,6 +273,8 @@ module.exports = function (logger) {
 						return phase_cb();
 					} else {
 						data._changes_iter++;
+						data.seq = body.last_seq;								// continue from here
+						logger.log('[phase 3] last sequence:', body.last_seq);
 						logger.log('[phase 3] there are more changes. getting next batch:', data._changes_iter);
 						return phase3(data, phase_cb);
 					}

@@ -114,7 +114,7 @@ rapid_couchdb.backup(opts, (errors, date_completed) => {
 //   1, 50 -> took: 47.7 seconds [82MB] (181k/min) (358MB/min) | {0.795min -> 7.4x}
 //   1, 50 -> took: 47.6 seconds [82MB] (182k/min) (359MB/min) | {0.793min -> 7.4x}
 
-// warp 2 - xlarge  (took 48 seconds to get 4M doc stubs!)
+// warp 3 - xlarge  (took 48 seconds to get 4M doc stubs!)
 // [test runs] - 10.6GB - 22.7M docs (4 deleted docs - 0%) 2058 batch size
 //   1, 80, 50 -> took:  [MB]
 // ------------------------------------------------

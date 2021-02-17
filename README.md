@@ -23,7 +23,7 @@ Otherwise it is only a little faster on large databases and its actually slower 
 | XLarge - 0% deleted    | 2.0 hrs        | 3.2 hrs       | 1.6x
 | XLarge - 75% deleted   | 34.5 mins      | 3.2 hrs       | 5.6x
 | Large - 0% deleted     | 2.7 mins       | 6.0 mins      | 2.2x
-| Large - 75% deleted    | 47.7 secs      | 5.9 mins      | 7.4x
+| Large - 75% deleted    | 52.9 secs      | 5.9 mins      | 6.7x
 | Small - 0% deleted     | 3.3 secs       | 2.4 secs      | 0.7x (slower)
 | Small - 75% deleted    | 2.5 secs       | 2.4 secs      | 0.9x (slower)
 
