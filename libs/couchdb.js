@@ -61,9 +61,7 @@ module.exports = (DB_CONNECTION_STRING) => {
 			baseUrl: couch_url,
 			url: '/' + opts.db_name + '?' + (opts.query ? opts.query : null),
 			timeout: 30000,
-			headers: {
-				'Accept': 'application/json'
-			}
+			headers: misc.build_headers()
 		};
 		request(options, (_, resp) => {
 			if (misc.is_error_code(misc.get_code(resp))) {
@@ -112,7 +110,7 @@ module.exports = (DB_CONNECTION_STRING) => {
 			url: '/' + opts.db_name + '/_changes?style=main_only' + (opts.query ? opts.query : ''),
 			method: 'GET',
 			timeout: 90000,
-			headers: { 'Accept': 'application/json' }
+			headers: misc.build_headers()
 		};
 
 		// --------- Handle Data --------- //

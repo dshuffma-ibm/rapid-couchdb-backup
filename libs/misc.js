@@ -190,5 +190,19 @@ module.exports = function () {
 		return active_docs;
 	};
 
+	// --------------------------------------------
+	// take an iam access token and build an auth header
+	// --------------------------------------------
+	exports.build_headers = () => {
+		const headers = {
+			'Content-Type': 'application/json',
+			'Accept': 'application/json'
+		};
+		if (process.env.IAM_ACCESS_TOKEN) {			// add the latest access token if we have one
+			headers['Authorization'] = 'Bearer ' + process.env.IAM_ACCESS_TOKEN;
+		}
+		return headers;
+	};
+
 	return exports;
 };

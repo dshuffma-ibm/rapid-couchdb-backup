@@ -82,6 +82,10 @@ const opts = {
 	// [optional] the maximum amount of time to wait on an read api in milliseconds.
 	// defaults 240000 (4 minutes)
 	read_timeout_ms: 1000 * 60 * 2,
+
+	// [optional] an IAM apikey can be provided.
+	// if provide a bearer token authorization header will be used to connect to couch.
+	iam_apikey: 'asdf',
 };
 
 rapid_couchdb.backup(opts, (errors, date_completed) => {

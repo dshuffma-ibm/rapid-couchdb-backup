@@ -6,10 +6,15 @@ module.exports = function (logger) {
 	if (!logger) {											// init dummy logger
 		logger = {
 			log: () => { },
+			debug: () => { },
 			error: () => { },
 			info: () => { }
 		};
 	}
+	logger.debug = (!logger.debug && logger.log) ? logger.log : logger.debug;
+	logger.info = (!logger.info && logger.log) ? logger.log : logger.info;
+	logger.warn = (!logger.warn && logger.log) ? logger.log : logger.warn;
+
 	const async = require('async');
 	const stream = require('stream');
 	const axios = require('axios').default;
@@ -17,6 +22,7 @@ module.exports = function (logger) {
 	const async_rl = require('./libs/async_rate.js')(logger);
 	const changes = require('./libs/changes.js');
 	const break_lines = require('./libs/break-lines.js');
+	const iam_lib = require('./libs/iam_lib.js')(logger);
 
 	//------------------------------------------------------------
 	// Backup a CouchDB database (this is the only exposed function in the lib)
@@ -32,9 +38,32 @@ module.exports = function (logger) {
 		head_room_percent: 20,													// [optional]
 		min_rate_per_sec: 2,													// [optional]
 		read_timeout_ms: 120000,												// [optional]
+		iam_apikey: '1231'														// [optional]
 	}
 	*/
 	exports.backup = (options, cb) => {
+		if (!options.iam_apikey) {									// no key, no need
+			start_da_backup();
+		} else {													// yes key, yes need
+			iam_lib.get_iam_key(options, () => {
+				start_da_backup();
+			});
+		}
+
+		function start_da_backup() {
+			exports.start_backup(options, (errors, response) => {
+				if (options.iam_apikey) {
+					iam_lib.stop_refresh(options.iam_apikey);
+				}
+				return cb(errors, response);
+			});
+		}
+	};
+
+	//------------------------------------------------------------
+	// Backup a CouchDB database (this is the only exposed function in the lib)
+	//------------------------------------------------------------
+	exports.start_backup = (options, cb) => {
 		const start = Date.now();
 		const couch = require('./libs/couchdb.js')(options.couchdb_url);
 		let finished_docs = 0;
@@ -48,7 +77,10 @@ module.exports = function (logger) {
 		let last_sequence = 0;
 		let changes_this_loop = 0;
 		let pending_sequences = '-';
-		logger.log('[stats] backup preflight starting @', start);
+
+
+
+		logger.info('[stats] backup preflight starting @', start);
 
 		// check input arguments
 		options.batch_get_bytes_goal = options.batch_get_bytes_goal || 1 * 1024 * 1024;	// default 1MB
@@ -167,7 +199,7 @@ module.exports = function (logger) {
 				responseType: 'stream',
 				method: 'get',
 				timeout: 90000,
-				headers: { 'Accept': 'application/json' }
+				headers: misc.build_headers(),
 			};
 			const s = new stream.PassThrough();
 			axios(req).then((response) => {
@@ -218,9 +250,7 @@ module.exports = function (logger) {
 						baseUrl: options.couchdb_url,
 						url: '/' + options.db_name + '/_bulk_get',
 						body: JSON.stringify({ docs: doc_stubs.slice(start, end) }),
-						headers: {
-							'Content-Type': 'application/json'
-						},
+						headers: misc.build_headers(),
 						timeout: options.read_timeout_ms,
 						_name: 'phase2',										// name to use in logs
 					};
