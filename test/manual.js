@@ -6,6 +6,7 @@ const secrets = require('../env/secrets.json');
 const opts = {
 	couchdb_url: secrets.couchdb_url,
 	db_name: secrets.db_name,
+	//iam_apikey: secrets.apikey,
 	max_rate_per_sec: 50,
 	max_parallel_reads: 50,
 	head_room_percent: 20,
