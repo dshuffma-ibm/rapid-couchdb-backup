@@ -19,6 +19,7 @@ module.exports = function (logger) {
 		start: 0,
 		request_opts_builder: (iter)=> {}	// function to build the http request options
 		_pause: false,						// if true, apis will stop being sent, stall
+		_all_stop: false,					// if true, the apis will stop being sent and the cb will be fired
 	}
 	*/
 	// min rates in cloudant:
@@ -75,6 +76,11 @@ module.exports = function (logger) {
 		function launcher(things, options, req_cb, fin_cb) {
 			async.eachLimit(things, options.max_parallel, (thing, cb) => {
 				stall_api(thing, () => {
+					if (options._all_stop === true) {										// end this thing already
+						logger.error('[spawn] ALL STOP');
+						return cb();
+					}
+
 					const id = ++on;
 					clean_up_records();
 					record_api(id);
@@ -90,7 +96,13 @@ module.exports = function (logger) {
 						if (err) {
 							logger.error('[spawn] connection error:\n', err);
 							http_errors.push(err);
+
+							if (options._all_stop === true) {								// end this thing already
+								logger.error('[spawn] ALL STOP');
+								return cb();
+							}
 						}
+
 						remove_api(id);
 						stall_loop(() => {													// stall the request cb if we are paused
 							const ret = {
@@ -146,7 +158,10 @@ module.exports = function (logger) {
 		// only start api if we are under the desired rate limit - RECURSIVE!
 		function stall_api(id, end_stall_cb) {
 			setTimeout(() => {
-				if (under_desired_rate_limit(CURRENT_LIMIT_PER_SEC)) {
+				if (options._all_stop === true) {							// do not stall, end everything
+					delete stalled_ids[id];
+					return end_stall_cb();
+				} else if (under_desired_rate_limit(CURRENT_LIMIT_PER_SEC)) {
 					delete stalled_ids[id];
 					return end_stall_cb();
 				} else {
@@ -287,7 +302,9 @@ module.exports = function (logger) {
 
 		// don't respond if we are paused
 		function stall_loop(stall_cb) {
-			if (options._pause === false) {
+			if (options._all_stop === true) {													// do not stall, end everything
+				return stall_cb();
+			} else if (options._pause === false) {
 				return stall_cb();
 			} else {
 				logger.log('[rec] paused.');
