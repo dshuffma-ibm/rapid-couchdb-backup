@@ -55,7 +55,7 @@ module.exports = function (logger) {
 				if (options.iam_apikey) {
 					iam_lib.stop_refresh(options.iam_apikey);
 				}
-				return cb(errors, response);
+				return cb(misc.order_errors(errors), response);
 			});
 		}
 	};
@@ -96,17 +96,26 @@ module.exports = function (logger) {
 		}
 
 		// go go gadget
-		get_db_data((internal_errors, data) => {							// get the sequence number and count the docs
-			if (internal_errors) {
-				logger.error('[stats] preflight errors:\n', internal_errors);
-				return cb({ internal_errors });
+		get_db_data((internal_errors_arr, data) => {						// get the sequence number and count the docs
+			if (internal_errors_arr) {
+				// already logged
+				return cb(internal_errors_arr);
 			}
 
 			num_all_db_docs = data.doc_count;								// hoist scope
 
 			// process a few million docs per loop
 			logger.log('\nstarting doc backup @', Date.now());
-			millions_doc_loop(data, () => {
+			millions_doc_loop(data, (loop_err_arr) => {
+				if (loop_err_arr) {
+					logger.error('[loop] backup errors:\n', loop_err_arr);
+					return cb(loop_err_arr);
+				}
+
+				if (async_options._all_stop === true) {
+					logger.error('[loop] ALL STOP (db is mia)');
+					return cb(db_errors);									// all done
+				}
 
 				// phase 3 - walk changes since start
 				data.seq = last_sequence || data.seq;
@@ -168,6 +177,11 @@ module.exports = function (logger) {
 						logger.error('[fin] backup may not be complete. errors:');
 						logger.error(JSON.stringify(errs, null, 2));
 					}
+					if (async_options._all_stop === true) {
+						logger.error('[fin] ALL STOP (db is mia)');
+						return million_cb(errs);									// all done
+					}
+
 					metrics.push('finished L' + data._doc_id_iter + ' phase 2 - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
 					logger.log('[loop -', data._doc_id_iter + '] active stubs this loop:', doc_stubs.length, 'total:', finished_docs,
@@ -242,6 +256,7 @@ module.exports = function (logger) {
 				max_parallel: options.max_parallel_reads,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
+				_all_stop: false,
 				request_opts_builder: (iter) => {								// build the options for each batch couchdb api
 					const start = (iter - 1) * data.batch_size;
 					const end = start + data.batch_size;
@@ -280,9 +295,10 @@ module.exports = function (logger) {
 				return phase_cb();
 			}
 
+			const bulk_size = (isNaN(data.batch_size) || data.batch_size <= 0) ? 1 : data.batch_size;		// cannot set 0 or negative
 			const opts = {
 				db_name: options.db_name,
-				query: '&since=' + data.seq + '&include_docs=true&limit=' + data.batch_size + '&seq_interval=' + data.batch_size
+				query: '&since=' + data.seq + '&include_docs=true&limit=' + bulk_size + '&seq_interval=' + bulk_size
 			};
 			couch.get_changes(opts, (err, body) => {							// get the changes feed
 				if (err || !body.results) {
@@ -300,7 +316,7 @@ module.exports = function (logger) {
 					finished_docs += docs.length;
 					write_docs_2_stream(data._changes_iter, docs);
 
-					if (docs.length !== data.batch_size) {
+					if (docs.length !== bulk_size) {
 						logger.log('[phase 3] all changes since backup start are processed.');
 						return phase_cb();
 					} else {
@@ -316,7 +332,7 @@ module.exports = function (logger) {
 
 		// handle the docs in the couchdb responses - write the docs to the stream
 		function handle_docs(response) {
-			const body = response ? response.body : null;
+			let body = response ? response.body : null;
 			const api_id = response ? response.iter : 0;
 			const doc_elapsed_ms = response ? response.elapsed_ms : 0;
 			const docs = misc.parse_for_docs(body);
@@ -327,6 +343,12 @@ module.exports = function (logger) {
 
 			if (body && body.error) {
 				db_errors.push(body);
+				if (misc.look_for_db_dne_err(body)) {
+					logger.error('---- critical error ----');
+					logger.error('[rec] ERROR response for api:', api_id + '. the db has had an untimely end!');
+					logger.error('---- critical error ----');
+					async_options._all_stop = true;
+				}
 			} else if (docs && docs.length > 0) {
 				finished_docs += docs.length;					// keep track of the number of docs we have finished
 				const percent_docs = finished_docs / num_all_db_docs * 100;
@@ -397,15 +419,17 @@ module.exports = function (logger) {
 		// get initial db data to figure out the batch size
 		// ------------------------------------------------------
 		function get_db_data(data_cb) {
+			const errs = [];
 			async.parallel([
 
 				// ---- Get basic db data ---- //
 				(join) => {
 					couch.get_db_data({ db_name: options.db_name }, (err, resp) => {				// first get the db data for the doc count
 						if (err) {
+							errs.push(err);
 							logger.error('[stats] unable to get basic db data. e:', err);
 						}
-						return join(err, resp);
+						return join(null, resp);
 					});
 				},
 
@@ -413,16 +437,21 @@ module.exports = function (logger) {
 				(join) => {
 					couch.get_changes({ db_name: options.db_name, query: '&since=now' }, (err, resp) => {	// get the changes feed and grab the last seq
 						if (err) {
+							errs.push(err);
 							logger.error('[stats] unable to get db changes. e:', err);
 						}
-						return join(err, resp);
+						return join(null, resp);
 					});
 				}
 
-			], (error, resp) => {
-				if (error || !resp || !resp[0] || !resp[1]) {
-					logger.error('[stats] missing data');
-					return data_cb(error, null);
+			], (_, resp) => {
+				if (errs.length > 0) {
+					// already logged
+					return data_cb(errs, null);
+				} else if (!resp || !resp[0] || !resp[1]) {
+					logger.error('[stats] missing db stat data to do backup');
+					errs.push({ error: 'missing db stat data to do backup' });
+					return data_cb(errs, null);
 				} else {
 					const resp1 = resp[0];
 					const avg_doc_bytes = (resp1.doc_count === 0) ? 0 : resp1.sizes.external / resp1.doc_count;

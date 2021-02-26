@@ -204,5 +204,38 @@ module.exports = function () {
 		return headers;
 	};
 
+	// --------------------------------------------
+	// see if we hit a database does not-exist error, if so put it first, makes it easier to parse for it
+	// --------------------------------------------
+	exports.order_errors = (errors) => {
+		if (Array.isArray(errors)) {
+			const ordered_errs = [];
+			for (let i in errors) {
+				if (exports.look_for_db_dne_err(errors[i])) {
+					ordered_errs.push(errors[i]);		// put this error first, always
+					errors.splice(i, 1);
+					break;
+				}
+			}
+
+			if (ordered_errs.length > 0) {
+				return ordered_errs.concat(errors);
+			}
+		}
+
+		return errors;
+	};
+
+	// --------------------------------------------
+	// see if we hit a database does not-exist error, if so put it first, makes it easier to parse for it
+	// --------------------------------------------
+	exports.look_for_db_dne_err = (error) => {
+		if (error && error.reason === 'Database does not exist.') {
+			return true;
+		} else {
+			return false;
+		}
+	};
+
 	return exports;
 };
