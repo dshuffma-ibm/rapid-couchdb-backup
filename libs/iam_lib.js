@@ -7,7 +7,7 @@ module.exports = (logger) => {
 	const iam = {};
 	const request = require('request');
 	const misc = require('./misc.js')();
-	const REFRESH_OFFSET_S = 3540;//300;
+	const REFRESH_OFFSET_S = 300;
 	const IAM_TOKEN_URL = process.env.IAM_TOKEN_URL || 'https://identity-3.us-south.iam.cloud.ibm.com/identity/token';
 	let iam_timeouts = {};
 	let stopping_timeouts = {};
@@ -43,7 +43,8 @@ module.exports = (logger) => {
 					logger.info('[iam] refresh timer created. will refresh in: ' + misc.friendly_ms(refresh_ms) +
 						', id: ' + censored_key(options.iam_apikey));
 					iam_timeouts[options.iam_apikey] = setTimeout(() => {
-						logger.info('[iam] refreshing iam access token now. id: ' + censored_key(options.iam_apikey));
+						logger.info('[iam] token expires in: ' + misc.friendly_ms(iam.get_time_left(options.iam_apikey)) +
+							', refreshing now. id: ' + censored_key(options.iam_apikey));
 						iam.get_iam_key(options, () => { });
 					}, refresh_ms);												// refresh the token before it expires
 				}
@@ -107,7 +108,7 @@ module.exports = (logger) => {
 	iam.get_time_left = (iam_apikey) => {
 		const timeout = iam_timeouts[iam_apikey];
 		if (timeout && timeout._idleStart) {
-			return timeout._idleStart + timeout._idleTimeout - Date.now() + (REFRESH_OFFSET_S * 1000);
+			return timeout._idleStart + timeout._idleTimeout + (REFRESH_OFFSET_S * 1000);
 		} else {
 			return 0;
 		}
@@ -143,7 +144,7 @@ module.exports = (logger) => {
 				hash = ((hash << 5) - hash) + char;
 				hash = hash & hash;
 			}
-			return hash.toString('base64');
+			return hash.toString(16);
 		}
 	}
 
