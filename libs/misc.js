@@ -237,5 +237,39 @@ module.exports = function () {
 		}
 	};
 
+	// ------------------------------------------
+	// return the url with auth if applicable but no path
+	// ------------------------------------------
+	exports.get_base_url = function (url_str) {
+		const parts = exports.break_up_url(url_str);
+		if (!parts) {
+			return null;
+		} else {
+			return parts.protocol + '//' + parts.auth_str + parts.hostname;
+		}
+	};
+
+	// ------------------------------------------
+	// break up url in proto, basic auth, hostname, port, etc
+	// ------------------------------------------
+	exports.break_up_url = function (url_str) {
+		if (url_str && typeof url_str === 'string' && !url_str.includes('://')) {	// if no protocol, assume https
+			url_str = 'https://' + url_str;											// append https so we can parse it
+		}
+
+		const parts = new URL(url_str);
+		if (!parts || !parts.hostname) {
+			return null;
+		} else {
+			const protocol = parts.protocol ? parts.protocol : 'https:';			// default protocol is https
+			if (parts.port === null) {
+				parts.port = protocol === 'https:' ? '443' : '80';					// match default ports to protocol
+			}
+			parts.auth_str = parts.username ? parts.username + ':' + parts.password + '@' : '';	// defaults to no auth
+
+			return parts;
+		}
+	};
+
 	return exports;
 };

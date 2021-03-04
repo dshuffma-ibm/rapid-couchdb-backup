@@ -66,7 +66,7 @@ module.exports = function (logger) {
 	//------------------------------------------------------------
 	exports.start_backup = (options, cb) => {
 		const start = Date.now();
-		const couch = require('./libs/couchdb.js')(options.couchdb_url);
+		const couch = require('./libs/couchdb.js')(misc.get_base_url(options.couchdb_url));
 		let finished_docs = 0;
 		let async_options = {};												// this needs to be at this scope so the write stream can pause it
 		let num_all_db_docs = 0;
@@ -211,7 +211,7 @@ module.exports = function (logger) {
 			logger.log('[phase 1] starting since sequence:', data._since);
 
 			const req = {
-				url: options.couchdb_url + '/' + options.db_name + '/_changes',
+				url: misc.get_base_url(options.couchdb_url) + '/' + options.db_name + '/_changes',
 				params: { style: 'main_only', seq_interval: MAX_STUBS_IN_MEMORY, limit: MAX_STUBS_IN_MEMORY, since: data._since },
 				responseType: 'stream',
 				method: 'get',
@@ -265,7 +265,7 @@ module.exports = function (logger) {
 					const end = start + data.batch_size;
 					return {
 						method: 'POST',
-						baseUrl: options.couchdb_url,
+						baseUrl: misc.get_base_url(options.couchdb_url),
 						url: '/' + options.db_name + '/_bulk_get',
 						body: JSON.stringify({ docs: doc_stubs.slice(start, end) }),
 						headers: misc.build_headers(),
