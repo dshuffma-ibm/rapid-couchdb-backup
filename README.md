@@ -1,7 +1,9 @@
-# rapid-couchdb-backup
+# Rapid Backup
 
 A couchdb database backup tool focusing on **speed** and **rate limit controls**.
 Will backup active docs in a couchdb database to a [node stream](https://nodejs.org/api/stream.html) (which could be a file or something else).
+
+_Note that this tool does **not** back up deleted docs. See [limitations](#limitations)._
 
 
 ## Rate Limit Controls
@@ -36,7 +38,7 @@ Otherwise it is only faster on large databases and its actually slower on very s
 ```js
 // to enable detailed logs pass a logger or the console to the lib,
 // else logging is disabled. (warning - there are a lot of logs!)
-const rapid_couchdb = require('../warp_speed.js')(console);
+const rapid = require('rapid-couchdb-backup')(console);
 
 // all options are shown below:
 const opts = {
@@ -83,12 +85,16 @@ const opts = {
 	// defaults 240000 (4 minutes)
 	read_timeout_ms: 1000 * 60 * 2,
 
-	// [optional] an IAM apikey can be provided.
+	// [optional] an IBM Cloud IAM apikey can be provided.
 	// if provide a bearer token authorization header will be used to connect to couch.
+	// the access token will be refreshed 5 minutes before it expires.
+	// the default iam exchange endpoint is:
+	//  - https://identity-3.us-south.iam.cloud.ibm.com/identity/token
+	//  - this url can be overwritten with the env var IAM_TOKEN_URL
 	iam_apikey: 'asdf',
 };
 
-rapid_couchdb.backup(opts, (errors, date_completed) => {
+rapid.backup(opts, (errors, date_completed) => {
 	console.log('backup completed on:', date_completed);
 	if (errors) {
 		console.error('looks like we had errors:', JSON.stringify(errors, null, 2));
@@ -115,9 +121,9 @@ Once its done with that it needs to find if any docs were added/edited since the
 Any new docs or changed docs will be written to the backup.
 
 ## Limitations
-- Docs that were deleted _during_ the backup will appear in the beginning of the backup. However they will be followed by their delete stub at the end of the backup data.
-- Docs that were edited _during_ the backup will appear twice in the backup data. The latest version is the one towards the end of backup.
-- Will only back up active docs. Meaning the deleted doc history is not part of the backup (with the exception of when a delete happens _during_ the backup process).
+- **Will only back up active docs.** Meaning the deleted doc history is not part of the backup (with the exception of when a delete happens _during_ the backup process).
+- Docs that were deleted _during_ the backup will appear in the beginning of the backup (in the un-deleted state). However they will be followed by their delete stub at the end of the backup data. Since restoring walks the backup the deleted doc will momentarily appear and then be deleted by the end.
+- Docs that were edited _during_ the backup will appear twice in the backup data. The latest version is the one towards the end of backup. Since restoring walks the backup the old doc will momentarily appear and then be updated by the end.
 - Does not store doc `meta` data such as previous revision tokens.
 - Does not back up attachments (this was chosen to preserve compatibility with @cloudant/couchbackup's restore function).
 
