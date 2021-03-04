@@ -187,7 +187,9 @@ module.exports = function (logger) {
 
 					logger.log('[loop -', data._doc_id_iter + '] active stubs this loop:', doc_stubs.length, 'total:', finished_docs,
 						'pending_sequences:', pending_sequences, 'changes_this_loop:', changes_this_loop);
-					logger.info('[iam] access token expires in: ' + misc.friendly_ms(iam_lib.get_time_left(options.iam_apikey)));
+					if (options.iam_apikey) {
+						logger.info('[iam] access token expires in: ' + misc.friendly_ms(iam_lib.get_time_left(options.iam_apikey)));
+					}
 
 					if (pending_sequences > 0) {									// if there are more pending changes then there are more docs to get
 						logger.log('[phase 2] more docs to handle. going back to phase 1. completed loops:', data._doc_id_iter + '/' + data.loops);
