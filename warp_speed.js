@@ -351,14 +351,14 @@ module.exports = function (logger) {
 				db_errors.push(body);
 				if (misc.look_for_db_dne_err(body)) {
 					logger.error('---- critical error ----');
-					logger.error('[rec] ERROR response for api:', api_id + '. the db has had an untimely end!');
+					logger.error('[rec] ERROR response for api: ' + api_id + '. the db has had an untimely end!');
 					logger.error('---- critical error ----');
 					async_options._all_stop = true;
 				}
 			} else if (docs && docs.length > 0) {
 				finished_docs += docs.length;					// keep track of the number of docs we have finished
 				const percent_docs = finished_docs / num_all_db_docs * 100;
-				logger.log('[rec] received api resp:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
+				logger.log('[rec] api response:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
 					', high:', misc.friendly_ms(high_ms) + ', fin docs:', misc.friendly_number(finished_docs), '[' + (percent_docs).toFixed(1) + '%]');
 				predict_time_left(api_id, percent_docs);
 				write_docs_2_stream(api_id, docs);
@@ -415,8 +415,8 @@ module.exports = function (logger) {
 				} catch (e) { }
 
 				if (doc_stubs.length % 10000 === 0) {									// print the status every so often
-					logger.log('[rec] received changes, stubs:', doc_stubs.length + ', elapsed:', misc.friendly_ms(Date.now() - start) +
-						', pending:', pending_sequences);
+					logger.log('[rec] received changes, stubs: ' + doc_stubs.length + ', elapsed: ' + misc.friendly_ms(Date.now() - start) +
+						', pending: ' + pending_sequences);
 				}
 			}
 		}
