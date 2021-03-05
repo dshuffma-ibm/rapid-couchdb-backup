@@ -1,6 +1,6 @@
 {
 	"name": "rapid-couchdb-backup",
-	"version": "0.2.2",
+	"version": "0.2.3",
 	"scripts": {
 		"start": "node backup.js",
 		"test": "node ./test/live_test.js",
