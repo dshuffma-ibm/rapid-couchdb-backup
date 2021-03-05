@@ -45,7 +45,7 @@ module.exports = function (logger) {
 		if (!options.iam_apikey) {									// no key, no need
 			start_da_backup();
 		} else {													// yes key, yes need
-			iam_lib.prepare_refresh(options);
+			iam_lib.prepare_refresh(options.iam_apikey);
 			iam_lib.get_iam_key(options, () => {
 				start_da_backup();
 			});
@@ -66,7 +66,8 @@ module.exports = function (logger) {
 	//------------------------------------------------------------
 	exports.start_backup = (options, cb) => {
 		const start = Date.now();
-		const couch = require('./libs/couchdb.js')(misc.get_base_url(options.couchdb_url));
+		options._base_url = misc.get_base_url(options.couchdb_url);
+		const couch = require('./libs/couchdb.js')(options._base_url);
 		let finished_docs = 0;
 		let async_options = {};												// this needs to be at this scope so the write stream can pause it
 		let num_all_db_docs = 0;
@@ -213,7 +214,7 @@ module.exports = function (logger) {
 			logger.log('[phase 1] starting since sequence:', data._since);
 
 			const req = {
-				url: misc.get_base_url(options.couchdb_url) + '/' + options.db_name + '/_changes',
+				url: options._base_url + '/' + options.db_name + '/_changes',
 				params: { style: 'main_only', seq_interval: MAX_STUBS_IN_MEMORY, limit: MAX_STUBS_IN_MEMORY, since: data._since },
 				responseType: 'stream',
 				method: 'get',
@@ -267,7 +268,7 @@ module.exports = function (logger) {
 					const end = start + data.batch_size;
 					return {
 						method: 'POST',
-						baseUrl: misc.get_base_url(options.couchdb_url),
+						baseUrl: options._base_url,
 						url: '/' + options.db_name + '/_bulk_get',
 						body: JSON.stringify({ docs: doc_stubs.slice(start, end) }),
 						headers: misc.build_headers(),
@@ -350,14 +351,14 @@ module.exports = function (logger) {
 				db_errors.push(body);
 				if (misc.look_for_db_dne_err(body)) {
 					logger.error('---- critical error ----');
-					logger.error('[rec] ERROR response for api:', api_id + '. the db has had an untimely end!');
+					logger.error('[rec] ERROR response for api: ' + api_id + '. the db has had an untimely end!');
 					logger.error('---- critical error ----');
 					async_options._all_stop = true;
 				}
 			} else if (docs && docs.length > 0) {
 				finished_docs += docs.length;					// keep track of the number of docs we have finished
 				const percent_docs = finished_docs / num_all_db_docs * 100;
-				logger.log('[rec] received resp for api:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
+				logger.log('[rec] api response:', api_id + ', # docs:', docs.length + ', took:', misc.friendly_ms(doc_elapsed_ms) +
 					', high:', misc.friendly_ms(high_ms) + ', fin docs:', misc.friendly_number(finished_docs), '[' + (percent_docs).toFixed(1) + '%]');
 				predict_time_left(api_id, percent_docs);
 				write_docs_2_stream(api_id, docs);
@@ -414,8 +415,8 @@ module.exports = function (logger) {
 				} catch (e) { }
 
 				if (doc_stubs.length % 10000 === 0) {									// print the status every so often
-					logger.log('[rec] received changes, stubs:', doc_stubs.length + ', elapsed:', misc.friendly_ms(Date.now() - start) +
-						', pending:', pending_sequences);
+					logger.log('[rec] received changes, stubs: ' + doc_stubs.length + ', elapsed: ' + misc.friendly_ms(Date.now() - start) +
+						', pending: ' + pending_sequences);
 				}
 			}
 		}
@@ -425,6 +426,7 @@ module.exports = function (logger) {
 		// ------------------------------------------------------
 		function get_db_data(data_cb) {
 			const errs = [];
+			logger.log('[stats] couchdb url: ' + misc.get_base_url(options.couchdb_url, true));
 			async.parallel([
 
 				// ---- Get basic db data ---- //

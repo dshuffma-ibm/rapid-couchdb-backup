@@ -240,12 +240,17 @@ module.exports = function () {
 	// ------------------------------------------
 	// return the url with auth if applicable but no path
 	// ------------------------------------------
-	exports.get_base_url = function (url_str) {
+	exports.get_base_url = function (url_str, hide_auth) {
 		const parts = exports.break_up_url(url_str);
 		if (!parts) {
 			return null;
 		} else {
-			return parts.protocol + '//' + parts.auth_str + parts.hostname;
+			let port = parts.port ? (':' + parts.port) : '';
+			if (hide_auth === true) {
+				return parts.protocol + '//' + parts.hostname + port;
+			} else {
+				return parts.protocol + '//' + parts.auth_str + parts.hostname + port;
+			}
 		}
 	};
 
@@ -262,8 +267,8 @@ module.exports = function () {
 			return null;
 		} else {
 			const protocol = parts.protocol ? parts.protocol : 'https:';			// default protocol is https
-			if (parts.port === null) {
-				parts.port = protocol === 'https:' ? '443' : '80';					// match default ports to protocol
+			if (!parts.port) {
+				parts.port = (protocol === 'https:') ? '443' : '80';				// match default ports to protocol
 			}
 			parts.auth_str = parts.username ? parts.username + ':' + parts.password + '@' : '';	// defaults to no auth
 

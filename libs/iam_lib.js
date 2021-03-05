@@ -47,6 +47,7 @@ module.exports = (logger) => {
 							', refreshing now. id: ' + censored_key(options.iam_apikey));
 						iam.get_iam_key(options, () => { });
 					}, refresh_ms);												// refresh the token before it expires
+					iam_timeouts[options.iam_apikey]._started = Date.now();
 				}
 			}
 
@@ -107,8 +108,8 @@ module.exports = (logger) => {
 	// --------------------------------------------------------------------------------------------
 	iam.get_time_left = (iam_apikey) => {
 		const timeout = iam_timeouts[iam_apikey];
-		if (timeout && timeout._idleStart) {
-			return timeout._idleStart + timeout._idleTimeout + (REFRESH_OFFSET_S * 1000);
+		if (timeout && timeout._started) {
+			return timeout._idleTimeout - (Date.now() - timeout._started) + (REFRESH_OFFSET_S * 1000);
 		} else {
 			return 0;
 		}
