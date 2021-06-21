@@ -179,7 +179,7 @@ module.exports = (logger) => {
 	function start_watch_dog() {
 		clearInterval(watch_dog);					// only need 1, kill others
 		watch_dog = setInterval(() => {
-			const MAX_STUCK_TIME_MIN = 20;
+			const MAX_STUCK_TIME_MIN = 10;
 			const elapsed = Date.now() - progress;
 			logger.debug('[iam] watch dog, last progress mins ago: ' + misc.friendly_ms(elapsed));
 
@@ -187,7 +187,7 @@ module.exports = (logger) => {
 				logger.error('[iam] watch dog timeout, ending all timers.');
 				kill_watch_dog();
 			}
-		}, 1000 * 60 * 6);							// check every few minutes
+		}, 1000 * 60 * 4);							// check every few minutes
 	}
 
 	// return null if we cannot parse response
