@@ -46,6 +46,7 @@ module.exports = function (logger) {
 		if (!options.iam_apikey) {									// no key, no need
 			start_da_backup();
 		} else {													// yes key, yes need
+			iam_lib.start_watch_dog();
 			iam_lib.prepare_refresh(options.iam_apikey);
 			iam_lib.get_iam_key(options, () => {
 				start_da_backup();

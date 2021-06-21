@@ -13,7 +13,6 @@ module.exports = (logger) => {
 	const stopping_timeouts = {};
 	let progress = Date.now();
 	let watch_dog = null;
-	start_watch_dog();
 
 	// --------------------------------------------------------------------------------------------
 	// convert an IAM api key for an IAM access token
@@ -132,6 +131,21 @@ module.exports = (logger) => {
 		}
 	};
 
+	// safe guard - after xxx minutes have elapsed with no progress kill all timers/intervals.
+	iam.start_watch_dog = () => {
+		clearInterval(watch_dog);					// only need 1, kill others
+		watch_dog = setInterval(() => {
+			const MAX_STUCK_TIME_MIN = 10;
+			const elapsed_ms = Date.now() - progress;
+			logger.debug('[iam] watch dog, last progress mins ago: ' + misc.friendly_ms(elapsed_ms));
+
+			if (elapsed_ms >= 1000 * 60 * MAX_STUCK_TIME_MIN) {
+				logger.error('[iam] error - watch dog timeout! ending all timers.');
+				kill_watch_dog();
+			}
+		}, 1000 * 60 * 4);							// check every few minutes
+	};
+
 	// --------------------------------------------------------------------------------------------
 	// indicate that progress is still occurring
 	// --------------------------------------------------------------------------------------------
@@ -173,21 +187,6 @@ module.exports = (logger) => {
 				iam.stop_refresh(key);				// end each
 			}
 		}
-	}
-
-	// safe guard - after xxx minutes have elapsed with no progress kill all timers/intervals.
-	function start_watch_dog() {
-		clearInterval(watch_dog);					// only need 1, kill others
-		watch_dog = setInterval(() => {
-			const MAX_STUCK_TIME_MIN = 10;
-			const elapsed = Date.now() - progress;
-			logger.debug('[iam] watch dog, last progress mins ago: ' + misc.friendly_ms(elapsed));
-
-			if (elapsed >= 1000 * 60 * MAX_STUCK_TIME_MIN) {
-				logger.error('[iam] watch dog timeout, ending all timers.');
-				kill_watch_dog();
-			}
-		}, 1000 * 60 * 4);							// check every few minutes
 	}
 
 	// return null if we cannot parse response
