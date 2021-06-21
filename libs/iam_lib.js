@@ -9,8 +9,11 @@ module.exports = (logger) => {
 	const misc = require('./misc.js')();
 	const REFRESH_OFFSET_S = 300;
 	const IAM_TOKEN_URL = process.env.IAM_TOKEN_URL || 'https://identity-3.us-south.iam.cloud.ibm.com/identity/token';
-	let iam_timeouts = {};
-	let stopping_timeouts = {};
+	const iam_timeouts = {};
+	const stopping_timeouts = {};
+	let progress = Date.now();
+	let watch_dog = null;
+	start_watch_dog();
 
 	// --------------------------------------------------------------------------------------------
 	// convert an IAM api key for an IAM access token
@@ -23,6 +26,7 @@ module.exports = (logger) => {
 	iam.get_iam_key = (options, cb) => {
 		logger.info('[iam] exchanging iam api key for token. ' + Date.now() + ', id: ' + censored_key(options.iam_apikey));
 		clearTimeout(iam_timeouts[options.iam_apikey]);							// clear past ones, only need 1 per key
+		iam_timeouts[options.iam_apikey] = null;
 
 		const opts = {
 			url: IAM_TOKEN_URL,
@@ -49,6 +53,17 @@ module.exports = (logger) => {
 					}, refresh_ms);												// refresh the token before it expires
 					iam_timeouts[options.iam_apikey]._started = Date.now();
 				}
+			} else {
+				if (!stopping_timeouts[options.iam_apikey]) {					// if we are stopping, do not create another timer
+					const refresh_ms = 30 * 1000;
+					logger.info('[iam] *retry* refresh timer created. will refresh in: ' + misc.friendly_ms(refresh_ms) +
+						', id: ' + censored_key(options.iam_apikey));
+					iam_timeouts[options.iam_apikey] = setTimeout(() => {		// make retry timer
+						logger.info('[iam] token expires in: ' + misc.friendly_ms(iam.get_time_left(options.iam_apikey)) +
+							', refreshing now. id: ' + censored_key(options.iam_apikey));
+						iam.get_iam_key(options, () => { });
+					}, refresh_ms);												// refresh the token before it expires
+				}
 			}
 
 			return cb(err, response ? response.access_token : null);
@@ -62,6 +77,7 @@ module.exports = (logger) => {
 		logger.info('[iam] init-ing the iam refresh timeout, id: ' + censored_key(apikey));
 		stopping_timeouts[apikey] = false;
 		clearTimeout(iam_timeouts[apikey]);
+		iam_timeouts[apikey] = null;
 	};
 
 	// --------------------------------------------------------------------------------------------
@@ -71,6 +87,7 @@ module.exports = (logger) => {
 		logger.info('[iam] clearing iam refresh timeout, id: ' + censored_key(apikey));
 		stopping_timeouts[apikey] = true;						// set this to catch a pending iam-key-exchange api from continuing forever
 		clearTimeout(iam_timeouts[apikey]);
+		iam_timeouts[apikey] = null;							// set to null so we can tell its stopped
 	};
 
 	// --------------------------------------------------------------------------------------------
@@ -114,6 +131,64 @@ module.exports = (logger) => {
 			return 0;
 		}
 	};
+
+	// --------------------------------------------------------------------------------------------
+	// indicate that progress is still occurring
+	// --------------------------------------------------------------------------------------------
+	iam.add_progress = () => {
+		progress = Date.now();						// update the time
+	};
+
+	// --------------------------------------------------------------------------------------------
+	// check if all timers have ended
+	// --------------------------------------------------------------------------------------------
+	iam.safe_kill_watch_dog = () => {
+		let ending = true;							// default
+		for (let key in iam_timeouts) {
+			if (iam_timeouts[key]) {				// if any exist, wait for it to end or the watch dog to trip
+				ending = false;
+			}
+		}
+		if (ending) {
+			kill_watch_dog();						// if we are ending we can kill our watch dog
+		}
+	};
+
+	// --------------------------------------------------------------------------------------------
+	// end the watch dog interval
+	// --------------------------------------------------------------------------------------------
+	function kill_watch_dog() {
+		kill_timers();
+		clearInterval(watch_dog);					// die
+		logger.debug('[iam] ended watch dog.');
+	}
+
+	// --------------------------------------------------------------------------------------------
+	// end all timers
+	// --------------------------------------------------------------------------------------------
+	function kill_timers() {
+		logger.debug('[iam] ending all timers. ' + Object.keys(iam_timeouts).length);
+		for (let key in iam_timeouts) {
+			if (iam_timeouts[key]) {
+				iam.stop_refresh(key);				// end each
+			}
+		}
+	}
+
+	// safe guard - after xxx minutes have elapsed with no progress kill all timers/intervals.
+	function start_watch_dog() {
+		clearInterval(watch_dog);					// only need 1, kill others
+		watch_dog = setInterval(() => {
+			const MAX_STUCK_TIME_MIN = 20;
+			const elapsed = Date.now() - progress;
+			logger.debug('[iam] watch dog, last progress mins ago: ' + misc.friendly_ms(elapsed));
+
+			if (elapsed >= 1000 * 60 * MAX_STUCK_TIME_MIN) {
+				logger.error('[iam] watch dog timeout, ending all timers.');
+				kill_watch_dog();
+			}
+		}, 1000 * 60 * 6);							// check every few minutes
+	}
 
 	// return null if we cannot parse response
 	function format_body(tx_id, resp) {
