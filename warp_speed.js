@@ -42,9 +42,11 @@ module.exports = function (logger) {
 	}
 	*/
 	exports.backup = (options, cb) => {
+		logger.info('[rapid] started.');
 		if (!options.iam_apikey) {									// no key, no need
 			start_da_backup();
 		} else {													// yes key, yes need
+			iam_lib.start_watch_dog();
 			iam_lib.prepare_refresh(options.iam_apikey);
 			iam_lib.get_iam_key(options, () => {
 				start_da_backup();
@@ -55,7 +57,9 @@ module.exports = function (logger) {
 			exports.start_backup(options, (errors, response) => {
 				if (options.iam_apikey) {
 					iam_lib.stop_refresh(options.iam_apikey);
+					iam_lib.safe_kill_watch_dog();
 				}
+				logger.info('[rapid] finished.');
 				return cb(misc.order_errors(errors), response);
 			});
 		}
@@ -79,7 +83,7 @@ module.exports = function (logger) {
 		let last_sequence = 0;
 		let changes_this_loop = 0;
 		let pending_sequences = '-';
-
+		iam_lib.add_progress();
 
 
 		logger.info('[stats] backup preflight starting @', start);
@@ -212,6 +216,7 @@ module.exports = function (logger) {
 			logger.log('[phase 1] starting...');
 			data._since = data._since || 0;
 			logger.log('[phase 1] starting since sequence:', data._since);
+			iam_lib.add_progress();
 
 			const req = {
 				url: options._base_url + '/' + options.db_name + '/_changes',
@@ -252,6 +257,7 @@ module.exports = function (logger) {
 			logger.log('[phase 2] starting...');
 			const CL_MIN_READ_RATE = 100;										// the reading rate of cloudant's cheapest plan
 			high_ms = 0;
+			iam_lib.add_progress();
 
 			async_options = {
 				start: start,
@@ -278,6 +284,7 @@ module.exports = function (logger) {
 				}
 			};
 			async_rl.async_reqs_limit(async_options, (resp, req_cb) => {
+				iam_lib.add_progress();
 				handle_docs(resp);
 				return req_cb();
 			}, (errs) => {														// all done!
@@ -295,6 +302,7 @@ module.exports = function (logger) {
 			data._changes_iter = data._changes_iter || 1;						// init if needed
 			logger.log('[phase 3] starting...');
 			logger.log('[phase 3] i:', data._changes_iter, 'looking since sequence:', data.seq.substring(0, 16));
+			iam_lib.add_progress();
 
 			if (data._changes_iter >= 75) {
 				logger.log('[phase 3] recursed on changes for too long. giving up.');
@@ -307,6 +315,7 @@ module.exports = function (logger) {
 				query: '&since=' + data.seq + '&include_docs=true&limit=' + bulk_size + '&seq_interval=' + bulk_size
 			};
 			couch.get_changes(opts, (err, body) => {							// get the changes feed
+				iam_lib.add_progress();
 				if (err || !body.results) {
 					logger.error('[phase 3] unable to get db changes. e:', err);
 					db_errors.push(err);
