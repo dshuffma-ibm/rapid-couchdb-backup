@@ -131,8 +131,7 @@ module.exports = function (logger) {
 					metrics.push('finished phase 3 - ' + misc.friendly_ms(Date.now() - start) + ', docs:' + finished_docs);
 
 					if (finished_docs < data.doc_count) {
-						logger.error('[fin] missing docs... found:', finished_docs + ', db had @ start', data.doc_count);
-						db_errors.push('warning - detected missing docs. found:' + finished_docs + ', db had @ start:' + data.doc_count);
+						logger.warn('[fin] missing docs... found:', finished_docs + ', db had @ start', data.doc_count);
 					} else {
 						logger.log('[fin] the # of finished docs is good. found:', finished_docs + ', db had @ start:', data.doc_count);
 					}
