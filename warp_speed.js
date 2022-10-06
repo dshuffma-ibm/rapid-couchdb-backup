@@ -263,7 +263,7 @@ module.exports = function (logger) {
 				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_stubs.length / data.batch_size),	// calc the number of batch apis we will send
 				starting_rate_per_sec: Math.floor(CL_MIN_READ_RATE * ((100 - options.head_room_percent) / 100)),	// start high, this is a read query
 				max_rate_per_sec: CL_MIN_READ_RATE * 2,							// its okay to go higher than the limit, it will find the limit
-				min_rate_per_sec: CL_MIN_READ_RATE / 2,
+				min_rate_per_sec: CL_MIN_READ_RATE / 5,
 				max_parallel: options.max_parallel_reads,
 				head_room_percent: options.head_room_percent,
 				_pause: false,

@@ -133,10 +133,10 @@ module.exports = function (logger) {
 				const current_rate_per_sec = Object.keys(ids).length;
 				const prev_limit = CURRENT_LIMIT_PER_SEC;
 				detected_max_rate_per_sec = current_rate_per_sec;			// this is likely the official rate limit, store it for logs
-				CURRENT_LIMIT_PER_SEC = Math.floor(current_rate_per_sec * ((100 - options.head_room_percent) / 100));
+				CURRENT_LIMIT_PER_SEC = Math.floor((current_rate_per_sec - 1) * ((100 - options.head_room_percent) / 100));
 
 				if (CURRENT_LIMIT_PER_SEC >= prev_limit) {				// if the new "decrease" is greater than old one... forget it, decrement old one instead
-					CURRENT_LIMIT_PER_SEC = prev_limit - 1;
+					CURRENT_LIMIT_PER_SEC = prev_limit * 0.8;
 				}
 
 				if (CURRENT_LIMIT_PER_SEC < options.min_rate_per_sec) {		// only let it go so low
@@ -147,7 +147,7 @@ module.exports = function (logger) {
 					', prev limit:', prev_limit, '\n\n');
 				timer1 = setTimeout(() => {
 					allow_decrease = true;									// allow decrease to happen again (few seconds)
-				}, 1000 * 5);
+				}, 1000 * 2);
 
 				timer2 = setTimeout(() => {
 					limit_hit = false;										// allow increase to happen again (many minutes)
