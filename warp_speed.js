@@ -36,7 +36,7 @@ module.exports = function (logger) {
 		max_rate_per_sec: 50,													// [optional]
 		max_parallel_reads: 10,													// [optional]
 		head_room_percent: 20,													// [optional]
-		min_rate_per_sec: 2,													// [optional]
+		min_rate_per_sec: 50,													// [optional]
 		read_timeout_ms: 120000,												// [optional]
 		iam_apikey: '1231'														// [optional]
 	}
@@ -89,11 +89,10 @@ module.exports = function (logger) {
 		logger.info('[stats] backup preflight starting @', start);
 
 		// check input arguments
-		options.batch_get_bytes_goal = options.batch_get_bytes_goal || 1 * 1024 * 1024;	// default 1MB
+		options.batch_get_bytes_goal = options.batch_get_bytes_goal || 128 * 1024;	// default 128KB
 		options.read_timeout_ms = options.read_timeout_ms || 1000 * 60 * 4;	// default 4 min
-		options.max_rate_per_sec = options.max_rate_per_sec || 50;			// default
-		options.min_rate_per_sec = options.min_rate_per_sec || 2;			// default
-		options.max_parallel_reads = options.max_parallel_reads || 25;		// default
+		options.max_rate_per_sec = options.max_rate_per_sec || 100;			// default
+		options.min_rate_per_sec = options.min_rate_per_sec || 50;			// default
 		options.head_room_percent = options.head_room_percent || 20;		// default
 		const input_errors = misc.check_inputs(options);					// check if there are any arg mistakes
 		if (input_errors.length > 0) {
@@ -258,16 +257,25 @@ module.exports = function (logger) {
 			high_ms = 0;
 			iam_lib.add_progress();
 
+			// calc the number of batch apis we will send
+			const get_doc_batch_size = data.batch_size || 1;
+			let max_parallel_apis = options.max_parallel_reads || (Math.floor(options.max_rate_per_sec / get_doc_batch_size) * 2);
+			if (max_parallel_apis < 1) {
+				max_parallel_apis = 1;
+			}
+			logger.log('[phase 2] max parallel apis:', max_parallel_apis);
+
 			async_options = {
 				start: start,
 				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_stubs.length / data.batch_size),	// calc the number of batch apis we will send
 				starting_rate_per_sec: Math.floor(CL_MIN_READ_RATE * ((100 - options.head_room_percent) / 100)),	// start high, this is a read query
-				max_rate_per_sec: CL_MIN_READ_RATE * 2,							// its okay to go higher than the limit, it will find the limit
-				min_rate_per_sec: CL_MIN_READ_RATE / 5,
-				max_parallel: options.max_parallel_reads,
+				max_rate_per_sec: options.max_rate_per_sec,
+				min_rate_per_sec: options.min_rate_per_sec,
+				max_parallel: max_parallel_apis,
 				head_room_percent: options.head_room_percent,
 				_pause: false,
 				_all_stop: false,
+				_reported_rate_modifier: data.batch_size,
 				request_opts_builder: (iter) => {								// build the options for each batch couchdb api
 					const start = (iter - 1) * data.batch_size;
 					const end = start + data.batch_size;
@@ -423,7 +431,7 @@ module.exports = function (logger) {
 				} catch (e) { }
 
 				if (doc_stubs.length % 10000 === 0) {									// print the status every so often
-					logger.log('[rec] received changes, stubs: ' + doc_stubs.length + ', elapsed: ' + misc.friendly_ms(Date.now() - start) +
+					logger.log('[rec] streaming changes, stubs: ' + doc_stubs.length + ', elapsed: ' + misc.friendly_ms(Date.now() - start) +
 						', pending: ' + pending_sequences);
 				}
 			}

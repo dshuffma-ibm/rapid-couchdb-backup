@@ -10,7 +10,7 @@ module.exports = function (logger) {
 	// run http request up to an unknown rate limit
 	/*
 	{
-		count: 100,							// number of http requests we will be sending
+		count: 100,							// number of http requests we will be sending in total (not in parallel)
 		max_rate_per_sec: 50,				// the maximum number of api requests to send per second (upper bound)
 		max_parallel: 10,					// [optional] how many pending apis can there ever be
 		head_room_percent: 20,				// [optional]
@@ -45,8 +45,10 @@ module.exports = function (logger) {
 		log_interval = setInterval(() => {
 			clean_up_records();
 			const elapsed_ms = Date.now() - start;
+			const detected_max_docs_per_sec = !detected_max_rate_per_sec ? '*' : (detected_max_rate_per_sec * options._reported_rate_modifier);
+			const curr_docs_per_sec_limit = Object.keys(ids).length * options._reported_rate_modifier;
 			logger.log('- running for: ' + misc.friendly_ms(elapsed_ms) + ', stalled apis:', Object.keys(stalled_ids).length + ', pending apis:',
-				Object.keys(pending_ids).length + ', current rate:', Object.keys(ids).length + '/sec, max:', detected_max_rate_per_sec + '/sec');
+				Object.keys(pending_ids).length + ', current read rate:', curr_docs_per_sec_limit + '/sec, max reads:', detected_max_docs_per_sec + '/sec');
 		}, 10 * 1000);
 
 		// --------------------------------------------
@@ -88,9 +90,15 @@ module.exports = function (logger) {
 					const req_options = options.request_opts_builder(id);
 					req_options._tx_id = id;
 
+					options._reported_rate_modifier = options._reported_rate_modifier || 1;
+					const at_docs_per_sec = apis_per_sec * options._reported_rate_modifier;
+					const curr_docs_per_sec_limit = CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier;
+					const detected_max_docs_per_sec = !detected_max_rate_per_sec ? '*' : (detected_max_rate_per_sec * options._reported_rate_modifier);
+
 					const percent_sent = (options.count === 0) ? 0 : (on / options.count * 100);
-					logger.log('[spawn] sending api', on + ', @ rate:', apis_per_sec + '/sec limit:', CURRENT_LIMIT_PER_SEC +
-						'/sec, detected max:', detected_max_rate_per_sec + '/sec, reqs sent:', percent_sent.toFixed(1) + '%');
+					logger.log('[spawn] sending api', on + ', @ doc read rate:', at_docs_per_sec + '/sec, batch size:', options._reported_rate_modifier +
+						', reqs sent:', percent_sent.toFixed(1) + '%');
+					logger.log('\tlimiting doc reads to:', curr_docs_per_sec_limit + '/sec, detected max rate of:', detected_max_docs_per_sec + '/sec');
 
 					retry_req(JSON.parse(JSON.stringify(req_options)), (err, resp) => {
 						if (err) {
@@ -135,23 +143,41 @@ module.exports = function (logger) {
 				detected_max_rate_per_sec = current_rate_per_sec;			// this is likely the official rate limit, store it for logs
 				CURRENT_LIMIT_PER_SEC = Math.floor((current_rate_per_sec - 1) * ((100 - options.head_room_percent) / 100));
 
-				if (CURRENT_LIMIT_PER_SEC >= prev_limit) {				// if the new "decrease" is greater than old one... forget it, decrement old one instead
+				if (CURRENT_LIMIT_PER_SEC >= prev_limit) {		// if the new "decreased" limit is greater than old one... forget it, decrement old one instead
 					CURRENT_LIMIT_PER_SEC = prev_limit * 0.8;
 				}
 
-				if (CURRENT_LIMIT_PER_SEC < options.min_rate_per_sec) {		// only let it go so low
-					CURRENT_LIMIT_PER_SEC = options.min_rate_per_sec;
+				if (CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier < options.min_rate_per_sec) {	// only let it go so low
+					CURRENT_LIMIT_PER_SEC = Math.floor(options.min_rate_per_sec / options._reported_rate_modifier);
+					if (CURRENT_LIMIT_PER_SEC < 1) {
+						CURRENT_LIMIT_PER_SEC = 1;
+					}
 				}
 
-				logger.log('\n\nDECREASING RATE LIMIT to:', CURRENT_LIMIT_PER_SEC + ', detected max:', detected_max_rate_per_sec +
-					', prev limit:', prev_limit, '\n\n');
+				// this shouldn't happen... but just incase don't let the new limit be higher than max rate limit
+				const head_room_dec = (100 - options.head_room_percent) / 100;
+				if ((CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier) > (options.max_rate_per_sec * head_room_dec)) {
+					CURRENT_LIMIT_PER_SEC = Math.ceil(options.max_rate_per_sec * head_room_dec / options._reported_rate_modifier);
+				}
+
+				options._reported_rate_modifier = options._reported_rate_modifier || 1;
+				const curr_docs_per_sec_limit = CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier;
+				const detected_max_docs_per_sec = !detected_max_rate_per_sec ? '*' : (detected_max_rate_per_sec * options._reported_rate_modifier);
+				const prev_max_docs_per_sec = prev_limit * options._reported_rate_modifier;
+				if (prev_limit === CURRENT_LIMIT_PER_SEC) {
+					logger.log('\n\n[CODE 429] Unable to decrease rate limit, the settings will nto allow it to go lower. detected doc max:',
+						detected_max_docs_per_sec, 'api limit: ', CURRENT_LIMIT_PER_SEC, '\n\n');
+				} else {
+					logger.log('\n\n[CODE 429] Decreasing doc rate limit to:', curr_docs_per_sec_limit + ', detected doc max:', detected_max_docs_per_sec +
+						', prev doc limit:', prev_max_docs_per_sec, 'api limit:', CURRENT_LIMIT_PER_SEC, '\n\n');
+				}
 				timer1 = setTimeout(() => {
 					allow_decrease = true;									// allow decrease to happen again (few seconds)
-				}, 1000 * 2);
+				}, 1000 * 10);
 
 				timer2 = setTimeout(() => {
 					limit_hit = false;										// allow increase to happen again (many minutes)
-				}, 1000 * 60 * 60);
+				}, 1000 * 60 * 12);
 			}
 		}
 
@@ -257,11 +283,24 @@ module.exports = function (logger) {
 
 				// adjust rate limit based on error code
 				const code = misc.get_code(resp);
+				const curr_docs_per_sec_limit = CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier;
 				if (code === 429) {
 					decrease_rate_limit();
-				} else if (limit_hit === false && CURRENT_LIMIT_PER_SEC < options.max_rate_per_sec) {
-					if (Number(opts._tx_id) % 5) {		 // no need to increase each time, do it slower to avoid congestion
+				} else if (limit_hit === false && curr_docs_per_sec_limit < options.max_rate_per_sec) {
+					if (Number(opts._tx_id) % 4) {		 // no need to increase each time, do it slower to avoid congestion
 						CURRENT_LIMIT_PER_SEC += 1;
+					}
+				}
+
+				// never go higher than what was provided in the input args for the max rate
+				const head_room_dec = (100 - options.head_room_percent) / 100;
+				if (curr_docs_per_sec_limit > (options.max_rate_per_sec * head_room_dec)) {
+					CURRENT_LIMIT_PER_SEC = Math.floor(options.max_rate_per_sec * head_room_dec / options._reported_rate_modifier);
+					if (CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier < options.min_rate_per_sec) {	// only let it go so low
+						CURRENT_LIMIT_PER_SEC = Math.floor(options.min_rate_per_sec / options._reported_rate_modifier);
+					}
+					if (CURRENT_LIMIT_PER_SEC < 1) {
+						CURRENT_LIMIT_PER_SEC = 1;
 					}
 				}
 
@@ -287,9 +326,9 @@ module.exports = function (logger) {
 			// calculate the delay to send the next request (in ms) - (_attempt is the number of the attempt that failed)
 			function calc_delay(opt, resp) {
 				const code = misc.get_code(resp);
-				opt._delay_ms = !isNaN(opt._delay_ms) ? opt._delay_ms : (250 + Math.random() * 200);	// small delay, little randomness to stagger reqs
+				opt._delay_ms = !isNaN(opt._delay_ms) ? opt._delay_ms : (500 + Math.random() * 750);	// small delay, little randomness to stagger reqs
 				if (code === 429) {																// on 429 codes stager delay exponential
-					opt._delay_ms *= 1.75;
+					opt._delay_ms *= 2;
 				} else {																		// on other codes stager delay w/large randomness
 					opt._delay_ms = ((500 * opt._attempt) + Math.random() * 1500);
 				}
