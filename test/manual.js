@@ -7,11 +7,13 @@ const opts = {
 	couchdb_url: secrets.couchdb_url,
 	db_name: secrets.db_name,
 	iam_apikey: secrets.apikey,
-	max_rate_per_sec: 50,
-	max_parallel_reads: 50,
-	head_room_percent: 20,
-	batch_get_bytes_goal: 1 * 1024 * 1024,
+	max_rate_per_sec: 800,
+	min_rate_per_sec: 100,
+	//max_parallel_reads: 50,
+	head_room_percent: 15,
+	batch_get_bytes_goal: 32 * 1024,
 	write_stream: fs.createWriteStream('./_backup_docs.json'),
+	_MAX_STUBS_IN_MEMORY: 1e6,
 };
 rapid_couchdb.backup(opts, (errors, date_completed) => {
 	console.log('the end:', date_completed);

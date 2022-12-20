@@ -55,10 +55,10 @@ const opts = {
 	// This will indirectly set the number of docs to batch read per request.
 	// Recommended to set this around 256KB - 1MB (the higher the better, usually).
 	// Setting this too high may overwhelm couchdb.
-	// defaults 1048576 (1MB)
-	batch_get_bytes_goal: 1 * 1024 * 1024,
+	// defaults 131072 (128KB)
+	batch_get_bytes_goal: 128 * 1024,
 
-	// [optional] the maximum number of apis to spawn per second.
+	// [optional] the maximum number of read queries to spawn per second.
 	// If this the rate limit is unknown, leave blank.
 	// This lib will auto detect the real rate limit.
 	// It will back off once a 429 response code is found.
@@ -67,19 +67,20 @@ const opts = {
 
 	// [optional] the maximum number of read queries to be waiting on.
 	// Setting this too high may overwhelm couchdb (10-50 seems okay).
-	// defaults 25
-	max_parallel_reads: 30,
+	// defaults to Math.floor(max_rate_per_sec / get_doc_batch_size) * 2
+	// recommended to leave it blank
+	max_parallel_reads: undefined,
 
 	// [optional] how much of the real rate limit should be left for other applications.
 	// example if 20 is set then only 80% of the detected-rate limit will be used.
 	// defaults 20
 	head_room_percent: 18,
 
-	// [optional] the minimum number of apis to spawn per second.
+	// [optional] the minimum number of read queries per second.
 	// when the lib encounters a 429 response code it lowers its internal limit.
 	// this setting will create a floor for the internal limit.
-	// defaults 2
-	min_rate_per_sec: 2,
+	// defaults 50
+	min_rate_per_sec: 50,
 
 	// [optional] the maximum amount of time to wait on an read api in milliseconds.
 	// defaults 240000 (4 minutes)
