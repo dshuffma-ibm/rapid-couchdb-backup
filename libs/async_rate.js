@@ -177,7 +177,7 @@ module.exports = function (logger) {
 
 				timer2 = setTimeout(() => {
 					limit_hit = false;										// allow increase to happen again (many minutes)
-				}, 1000 * 60 * 12);
+				}, 1000 * 60 * 15);
 			}
 		}
 
@@ -283,12 +283,14 @@ module.exports = function (logger) {
 
 				// adjust rate limit based on error code
 				const code = misc.get_code(resp);
+				let increasing_limit = false;
 				const curr_docs_per_sec_limit = CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier;
 				if (code === 429) {
 					decrease_rate_limit();
 				} else if (limit_hit === false && curr_docs_per_sec_limit < options.max_rate_per_sec) {
 					if (Number(opts._tx_id) % 4) {		 // no need to increase each time, do it slower to avoid congestion
 						CURRENT_LIMIT_PER_SEC += 1;
+						increasing_limit = true;
 					}
 				}
 
@@ -302,6 +304,11 @@ module.exports = function (logger) {
 					if (CURRENT_LIMIT_PER_SEC < 1) {
 						CURRENT_LIMIT_PER_SEC = 1;
 					}
+				}
+
+				if (increasing_limit) {
+					const new_docs_per_sec_limit = CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier;
+					logger.log('\n\nIncreasing rate limit', new_docs_per_sec_limit, '\n\n');
 				}
 
 				// retry logic
@@ -326,7 +333,7 @@ module.exports = function (logger) {
 			// calculate the delay to send the next request (in ms) - (_attempt is the number of the attempt that failed)
 			function calc_delay(opt, resp) {
 				const code = misc.get_code(resp);
-				opt._delay_ms = !isNaN(opt._delay_ms) ? opt._delay_ms : (500 + Math.random() * 750);	// small delay, little randomness to stagger reqs
+				opt._delay_ms = !isNaN(opt._delay_ms) ? opt._delay_ms : (500 + Math.random() * 1500);	// small delay, large randomness to stagger reqs
 				if (code === 429) {																// on 429 codes stager delay exponential
 					opt._delay_ms *= 2;
 				} else {																		// on other codes stager delay w/large randomness

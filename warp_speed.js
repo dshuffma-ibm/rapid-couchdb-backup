@@ -263,12 +263,20 @@ module.exports = function (logger) {
 			if (max_parallel_apis < 1) {
 				max_parallel_apis = 1;
 			}
+			logger.log('[phase 2] batch size:', get_doc_batch_size);
 			logger.log('[phase 2] max parallel apis:', max_parallel_apis);
+
+			// start with a low rate, work our way up
+			let starting_api_rate = Math.floor(CL_MIN_READ_RATE * ((100 - options.head_room_percent) / 100) / get_doc_batch_size);
+			if (starting_api_rate < 1) {
+				starting_api_rate = 1;
+			}
+			logger.log('[phase 2] starting apis rate  per sec:', starting_api_rate);
 
 			async_options = {
 				start: start,
 				count: (data.batch_size === 0) ? 0 : Math.ceil(doc_stubs.length / data.batch_size),	// calc the number of batch apis we will send
-				starting_rate_per_sec: Math.floor(CL_MIN_READ_RATE * ((100 - options.head_room_percent) / 100)),	// start high, this is a read query
+				starting_rate_per_sec: starting_api_rate,						// start low, work way up
 				max_rate_per_sec: options.max_rate_per_sec,
 				min_rate_per_sec: options.min_rate_per_sec,
 				max_parallel: max_parallel_apis,
