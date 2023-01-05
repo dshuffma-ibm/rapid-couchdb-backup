@@ -32,12 +32,13 @@ module.exports = function (logger) {
 		let pending_ids = {};
 		let allow_decrease = true;
 		let limit_hit = false;
+		let allow_increase = true;
 		let CURRENT_LIMIT_PER_SEC = options.starting_rate_per_sec || 2;	// start off at 2, increase from here
 		let detected_max_rate_per_sec = 0;
 		const stalled_ids = {};
 		let log_interval = null;
 		let http_errors = [];
-		let timer1, timer2;
+		let timer1, timer2, timer3;
 
 		// --------------------------------------------
 		// first setup a progress logger - do this first b/c w/o we may hit the launcher callback before the interval was created and then it won't be cleared
@@ -63,6 +64,7 @@ module.exports = function (logger) {
 			clearInterval(log_interval);
 			clearTimeout(timer1);
 			clearTimeout(timer2);
+			clearTimeout(timer3);
 			if (http_errors.length > 0) {
 				logger.error('[fin] there were http errors. :(\n', http_errors);
 				return finish_cb(http_errors);
@@ -100,7 +102,7 @@ module.exports = function (logger) {
 						', reqs sent:', percent_sent.toFixed(1) + '%');
 					logger.log('\tlimiting doc reads to:', curr_docs_per_sec_limit + '/sec, detected max rate of:', detected_max_docs_per_sec + '/sec');
 
-					retry_req(JSON.parse(JSON.stringify(req_options)), (err, resp) => {
+					retry_req(JSON.parse(JSON.stringify(req_options)), thing, (err, resp) => {
 						if (err) {
 							logger.error('[spawn] connection error:\n', err);
 							http_errors.push(err);
@@ -165,11 +167,11 @@ module.exports = function (logger) {
 				const detected_max_docs_per_sec = !detected_max_rate_per_sec ? '*' : (detected_max_rate_per_sec * options._reported_rate_modifier);
 				const prev_max_docs_per_sec = prev_limit * options._reported_rate_modifier;
 				if (prev_limit === CURRENT_LIMIT_PER_SEC) {
-					logger.log('\n\n[CODE 429] Unable to decrease rate limit, the settings will nto allow it to go lower. detected doc max:',
-						detected_max_docs_per_sec, 'api limit: ', CURRENT_LIMIT_PER_SEC, '\n\n');
+					logger.log('\n\n[CODE 429] Unable to decrease rate limit, the settings will not allow it to go lower. detected doc max:',
+						detected_max_docs_per_sec, 'api limit: ', CURRENT_LIMIT_PER_SEC, '\n');
 				} else {
 					logger.log('\n\n[CODE 429] Decreasing doc rate limit to:', curr_docs_per_sec_limit + ', detected doc max:', detected_max_docs_per_sec +
-						', prev doc limit:', prev_max_docs_per_sec, 'api limit:', CURRENT_LIMIT_PER_SEC, '\n\n');
+						', prev doc limit:', prev_max_docs_per_sec, 'api limit:', CURRENT_LIMIT_PER_SEC, '\n');
 				}
 				timer1 = setTimeout(() => {
 					allow_decrease = true;									// allow decrease to happen again (few seconds)
@@ -187,7 +189,7 @@ module.exports = function (logger) {
 				if (options._all_stop === true) {							// do not stall, end everything
 					delete stalled_ids[id];
 					return end_stall_cb();
-				} else if (under_desired_rate_limit(CURRENT_LIMIT_PER_SEC)) {
+				} else if (under_desired_rate_limit()) {
 					delete stalled_ids[id];
 					return end_stall_cb();
 				} else {
@@ -198,11 +200,11 @@ module.exports = function (logger) {
 		}
 
 		// see if we are at the rate limit or not
-		function under_desired_rate_limit(current_internal_limit) {
+		function under_desired_rate_limit() {
 			if (options._pause === true) {									// stall them all if we need to pause, back pressure
 				return false;
 			} else {
-				return Object.keys(ids).length < current_internal_limit;
+				return Object.keys(ids).length < CURRENT_LIMIT_PER_SEC;
 			}
 		}
 
@@ -250,7 +252,7 @@ module.exports = function (logger) {
 				_max_attempts: 3,
 			}
 		*/
-		function retry_req(opts, cb) {
+		function retry_req(opts, thing, cb) {
 			opts._name = opts._name || 'request';										// name for request type, for debugging
 			opts._max_attempts = opts._max_attempts || 3;								// only try so many times
 			opts._retry_codes = opts._retry_codes || {									// list of codes we will retry
@@ -288,9 +290,13 @@ module.exports = function (logger) {
 				if (code === 429) {
 					decrease_rate_limit();
 				} else if (limit_hit === false && curr_docs_per_sec_limit < options.max_rate_per_sec) {
-					if (Number(opts._tx_id) % 4) {		 // no need to increase each time, do it slower to avoid congestion
+					if (allow_increase === true) {		 // no need to increase each time, do it slower to avoid congestion
 						CURRENT_LIMIT_PER_SEC += 1;
 						increasing_limit = true;
+						allow_increase = false;
+						timer3 = setTimeout(() => {
+							allow_increase = true;		// allow increase to happen again (several seconds)
+						}, 1000 * 20);
 					}
 				}
 
@@ -308,7 +314,7 @@ module.exports = function (logger) {
 
 				if (increasing_limit) {
 					const new_docs_per_sec_limit = CURRENT_LIMIT_PER_SEC * options._reported_rate_modifier;
-					logger.log('\n\nIncreasing rate limit', new_docs_per_sec_limit, '\n\n');
+					logger.log('\n\nIncreasing rate limit', new_docs_per_sec_limit, '\n');
 				}
 
 				// retry logic
@@ -322,7 +328,9 @@ module.exports = function (logger) {
 							const delay_ms = calc_delay(opts, resp);
 							logger.error('[' + opts._name + ' ' + opts._tx_id + '] ' + code_desc + ', trying again in a bit:', misc.friendly_ms(delay_ms));
 							return setTimeout(() => {
-								return retry_req(opts, cb);										// try the request again after a delay
+								stall_api(thing, () => {
+									return retry_req(opts, thing, cb);							// try the request again after a delay
+								});
 							}, delay_ms);
 						}
 					}
