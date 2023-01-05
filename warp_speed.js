@@ -265,6 +265,12 @@ module.exports = function (logger) {
 			}
 			logger.log('[phase 2] batch size:', get_doc_batch_size);
 			logger.log('[phase 2] max parallel apis:', max_parallel_apis);
+			logger.log('[phase 2] max doc per sec:', options.max_rate_per_sec);
+			logger.log('[phase 2] min doc per sec:', options.min_rate_per_sec);
+			logger.log('[phase 2] head room: ' + options.head_room_percent + '%');
+
+			const head_room_dec = (100 - options.head_room_percent) / 100;
+			logger.log('[phase 2] max doc per sec - head room:', Math.floor(options.max_rate_per_sec * head_room_dec));
 
 			// start with a low rate, work our way up
 			let starting_api_rate = Math.floor(CL_MIN_READ_RATE * ((100 - options.head_room_percent) / 100) / get_doc_batch_size);
@@ -486,7 +492,7 @@ module.exports = function (logger) {
 				} else {
 					const resp1 = resp[0];
 					const avg_doc_bytes = (resp1.doc_count === 0) ? 0 : resp1.sizes.external / resp1.doc_count;
-					const batch_size = (avg_doc_bytes === 0) ? 0 : Math.floor(options.batch_get_bytes_goal / avg_doc_bytes);
+					const batch_size = (avg_doc_bytes === 0) ? 0 : Math.floor(options.batch_get_bytes_goal / avg_doc_bytes * 0.85);
 					const doc_count = resp1.doc_count;
 					const del_count = resp1.doc_del_count;
 					const seq = resp[1].last_seq;
