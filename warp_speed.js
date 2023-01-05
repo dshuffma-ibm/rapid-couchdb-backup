@@ -492,7 +492,7 @@ module.exports = function (logger) {
 				} else {
 					const resp1 = resp[0];
 					const avg_doc_bytes = (resp1.doc_count === 0) ? 0 : resp1.sizes.external / resp1.doc_count;
-					const batch_size = (avg_doc_bytes === 0) ? 0 : Math.floor(options.batch_get_bytes_goal / avg_doc_bytes * 0.85);
+					const batch_size = (avg_doc_bytes === 0) ? 0 : Math.floor(options.batch_get_bytes_goal / avg_doc_bytes);
 					const doc_count = resp1.doc_count;
 					const del_count = resp1.doc_del_count;
 					const seq = resp[1].last_seq;
