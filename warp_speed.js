@@ -395,7 +395,7 @@ module.exports = function (logger) {
 				const job_elapsed_ms = Date.now() - start;
 				const estimated_total_ms = (percent_all_db_docs_done === 0) ? 0 : (1 / (percent_all_db_docs_done / 100) * job_elapsed_ms);
 				const time_left = (estimated_total_ms - job_elapsed_ms);
-				logger.log('[estimates] total backup:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left));
+				logger.log('[estimates] total backup will take:', misc.friendly_ms(estimated_total_ms) + ', time left:', misc.friendly_ms(time_left));
 			}
 		}
 

@@ -86,7 +86,6 @@ module.exports = function (logger) {
 					}
 
 					const id = ++on;
-					clean_up_records();
 					record_api(id);
 					const apis_per_sec = Object.keys(ids).length;
 					const req_options = options.request_opts_builder(id);
@@ -185,18 +184,19 @@ module.exports = function (logger) {
 
 		// only start api if we are under the desired rate limit - RECURSIVE!
 		function stall_api(id, end_stall_cb) {
-			setTimeout(() => {
-				if (options._all_stop === true) {							// do not stall, end everything
-					delete stalled_ids[id];
-					return end_stall_cb();
-				} else if (under_desired_rate_limit()) {
-					delete stalled_ids[id];
-					return end_stall_cb();
-				} else {
+			clean_up_records();
+			if (options._all_stop === true) {							// do not stall, end everything
+				delete stalled_ids[id];
+				return end_stall_cb();
+			} else if (under_desired_rate_limit()) {
+				delete stalled_ids[id];
+				return end_stall_cb();
+			} else {
+				setTimeout(() => {
 					stalled_ids[id] = true;
 					return stall_api(id, end_stall_cb);						// postpone again - recurse
-				}
-			}, 125);
+				}, 200);
+			}
 		}
 
 		// see if we are at the rate limit or not
@@ -329,6 +329,7 @@ module.exports = function (logger) {
 							logger.error('[' + opts._name + ' ' + opts._tx_id + '] ' + code_desc + ', trying again in a bit:', misc.friendly_ms(delay_ms));
 							return setTimeout(() => {
 								stall_api(thing, () => {
+									record_api(opts._tx_id);
 									return retry_req(opts, thing, cb);							// try the request again after a delay
 								});
 							}, delay_ms);
